@@ -91,7 +91,7 @@ def simulate(
     tmp: str | Path | None = None,
     dry_run: bool = False,
 ) -> xr.Dataset | None:
-    """Translate one case and execute through the existing PACE Program.
+    """Translate one case and execute through the existing Program mechanics.
 
     ``outputs`` and ``tmp`` are invocation paths relative to cwd. A dry run writes
     the same native input records beside ``outputs`` and returns None.
@@ -100,21 +100,56 @@ def simulate(
 
     if not isinstance(case, Case):
         case = load_case(case)
+    method = case.spectral.get("method")
+    if method == "monochromatic":
+        from .monochromatic import Monochromatic, case_inputs, solar_source, check_data
+
+        program = Monochromatic()
+    else:
+        program = init()
     inputs = case_inputs(case)
     illumination = None if dry_run else solar_source(case)
+    if method == "monochromatic" and not dry_run:
+        check_data(case, inputs, illumination)
     outputs = Path(outputs).expanduser().resolve()
-    init().run(
+    program.run(
         inputs, outputs, Path(tmp or gettempdir()).expanduser().resolve(), dry_run
     )
     if dry_run:
         return None
     attributes = dict(
-        spectral_method="pace_native",
+        spectral_method=method,
         illumination_policy=case.illumination["source"],
         illumination_source=str(illumination),
-        sensor="pace",
-        channel_selection=case.sensor["channels"],
+        sensor=case.sensor.get("name", "monochromatic"),
     )
+    if method == "pace_native":
+        attributes["channel_selection"] = case.sensor["channels"]
     with Dataset(outputs, "a") as result:
         result.setncatts(attributes)
+        if method == "monochromatic":
+            _monochromatic_metadata(result)
     return xr.load_dataset(outputs)
+
+
+def _monochromatic_metadata(result):
+    result.setncatts(
+        dict(
+            stokes_convention="Native RTSOS I,Q,U,V; meridian-plane reference; no sign changes",
+            angle_convention="ThetaV=acos(mu); 0 upward, 180 downward; PhiV native solar-plane azimuth",
+            detector_convention="TOA top of atmosphere; AirSensor at sensor_height_km; BOA above interface; TOO below ocean interface",
+            gas_method="Native cross-section searches at requested wavelength, then trapezoidal height integration; species cutoffs retained",
+        )
+    )
+    for name, variable in result.variables.items():
+        if name.startswith("Stokes_Vector"):
+            variable.units = "W m-2 sr-1 um-1"
+        elif name.startswith("Irradiance_") or name == "Solar_Irradiance":
+            variable.units = "W m-2 um-1"
+        elif name == "Wavelength_Evaluated":
+            variable.units = "nm"
+        elif name in ("ThetaV", "PhiV"):
+            variable.units = "degree"
+        elif name.startswith("Tau_"):
+            variable.units = "1"
+    result.variables["N_Stokes_Parameter"].stokes_labels = "I Q U V"

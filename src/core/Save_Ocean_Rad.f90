@@ -20,11 +20,12 @@ INTEGER :: SUNREAD_STATUS = 0
 
 CONTAINS
 
-SUBROUTINE SUNLREADIN(aux_dir)
+SUBROUTINE SUNLREADIN(aux_dir, source)
 IMPLICIT NONE
 
 INTEGER :: ILINE
 CHARACTER*360 ::aux_dir
+CHARACTER(LEN=*), OPTIONAL, INTENT(IN) :: source
 CHARACTER(LEN=360)SUNLFILE
 DOUBLE PRECISION :: RTMP
 
@@ -42,6 +43,10 @@ ENDIF
 ! Earth and Space Science, 10, e2022EA002637. https://doi.org/10.1029/2022EA002637
 SUNLFILE=trim(aux_dir)//'/tsis1_hsrs_binned_fs.csv'
 INQUIRE(FILE=SUNLFILE, EXIST=file_e)
+IF(PRESENT(source))THEN
+  IF(source=='thuillier') file_e=.false.
+  IF(source=='tsis' .AND. .NOT. file_e) ERROR STOP 'Requested TSIS solar file is missing'
+ENDIF
 
 IF(file_e)THEN
 ! USE TSIS-1 SSI FILE
@@ -57,8 +62,10 @@ IF(file_e)THEN
 	FSUN=FSUN*1000.0D0  ! CHANGE UNIT FROM W/m^2/nm to W/m^2/micron
 	WVSUN=WVSUN/1000.0D0 ! CHANGE UNIT FROM nm TO micron
 ELSE
+	IF(.NOT.PRESENT(source))THEN
 	WRITE(*,*)'CANNOT FOUND SOLAR IRRADIANCE FILE:',SUNLFILE
 	WRITE(*,*)'Trying to find f0.txt instead ...'
+	ENDIF
 
 ! USE THUILLIER SPECTRUM
 	SUNLFILE=trim(aux_dir)//'/f0.txt'

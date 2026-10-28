@@ -195,6 +195,20 @@ in [section 2.1B](#21b-python-wrapper).
 For monochromatic simulation, users are referred to the documentation located at
 "Documentation/Describtion_of_input_files/SOS_io.pdf" in the source code repository.
 
+For readable physical cases at requested wavelengths, the installed Python/CLI
+route is:
+
+```shell
+$ rtsos simulate examples/monochromatic_ocean.toml ocean.nc
+$ rtsos simulate examples/monochromatic_land.toml land.nc
+```
+
+Set each example's data locations first. Both evaluate 551.25 and 443.125 nm;
+the land example supplies micrometres. Python uses the same `simulate` function.
+See [the examples guide](examples/README.md#requested-monochromatic-wavelengths)
+for the wavelength, model, data, illumination, units and numerical contracts.
+The existing low-level `rtsos_rao_dg` command remains available.
+
 ### 2.1A.1 PACE Simulator
 
 #### Input Files 

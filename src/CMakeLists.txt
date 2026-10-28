@@ -1,6 +1,7 @@
 foreach(t
     aerosol_phasematrix_preparation
     core
+    physical_preparation
     pace_simulator
 )
     add_subdirectory(${t})
@@ -41,6 +42,14 @@ target_link_libraries(rtsos_rao_dg
 add_executable(rtsos_PACE_Simulator_DoubleK
     pace_simulator/main_PACE_Simulator_DoubleK.f90
 )
+add_executable(rtsos_Monochromatic
+    monochromatic/result.f90
+    monochromatic/main.f90
+)
+target_link_libraries(rtsos_Monochromatic
+    physical_preparation
+    hdf5::hdf5_hl_fortran
+)
 target_link_libraries(rtsos_PACE_Simulator_DoubleK
     core
     pace_simulator
@@ -58,6 +67,7 @@ install(
         rtsos_Aerosol_Phmx_Cal
         rtsos_rao_dg
         rtsos_PACE_Simulator_DoubleK
+        rtsos_Monochromatic
     RUNTIME DESTINATION
         ${_BINDIR}
 )

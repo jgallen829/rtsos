@@ -5,5 +5,6 @@ add_library(pace_simulator
 )
 target_link_libraries(pace_simulator
     core
+    physical_preparation
     HDF5::HDF5
 )

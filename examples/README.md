@@ -1,4 +1,4 @@
-# Physical cases and exact response data
+# Physical cases, monochromatic evaluation and exact response data
 
 `pace_ocean.toml` and `pace_land.toml` each specify one physical state. Both select
 solar zenith 20 degrees and upper aerosol optical depth 0.125; ocean chlorophyll
@@ -215,9 +215,120 @@ calibration center is `None`, rather than the file's fill number. Neither loader
 selection trims, clips, normalizes, resamples or interpolates calibration data.
 Wavelength units are explicit `nm` or `um`.
 
-Case loading can also retain requests such as `spectral.method = "monochromatic"`
-with `wavelength_unit = "nm"` and an ordered `wavelengths` list. Execution of
-those requests, custom response integration, arbitrary viewing lists, scalar RT
-and custom illumination require native connections. `simulate` reports the
-specific missing operation before running. It never substitutes a band center,
-nearest channel or sparse spectral calculation for a requested method.
+## Requested monochromatic wavelengths
+
+`monochromatic_ocean.toml` and `monochromatic_land.toml` evaluate **551.25 nm and
+443.125 nm**, in that order. The land example supplies the same wavelengths in
+micrometres. Set `data.root` (or both direct data paths) and run:
+
+```sh
+rtsos simulate monochromatic_ocean.toml ocean.nc
+rtsos simulate monochromatic_land.toml land.nc
+```
+
+```python
+from rtsos import load_case, simulate
+
+case = load_case("monochromatic_ocean.toml")
+case.spectral["wavelengths"] = [551.25, 443.125, 551.25]
+result = simulate(case, "ocean.nc")
+print(result.Wavelength_Evaluated.values)
+```
+
+The explicit `spectral.wavelength_unit` is `nm` or `um`; wavelengths are positive
+finite numbers. The `request` coordinate is a zero-based identity, so repeated
+wavelengths remain separate requests and the supplied order is preserved.
+`wavelength_requested` retains the original numbers/units, `wavelength_nm` is the
+conversion passed to native code, and `Wavelength_Evaluated` records the native
+value. No PACE group, instrument response file, band center, interval average or
+response integration is involved. `[sensor]` can be empty or contain a `name`
+used only as a result label. Response files remain independently loadable data.
+
+The native process prepares Mie optics at the actual requested wavelength and at
+the separate `wv_pace_ref` aerosol optical-depth reference. Case 2 also prepares
+its mineral optics at the model's 665 nm normalization wavelength. These physical
+reference wavelengths do not replace the evaluated wavelength. The original
+public atmosphere, Rayleigh, built-in aerosol, land, water, phase expansion and
+RTSOS solver routines are shared with PACE. Global state is isolated in one
+process per requested wavelength, through the existing `Program` mechanics.
+
+All eight named surface/water choices above retain their public equations and
+parameters. The ocean example uses the existing chlorophyll model, 20 °C water,
+37 PSU salinity, whitecaps, atmosphere, gas absorption, and glint. It explicitly
+disables Raman, chlorophyll/CDOM fluorescence and NPQ. The monochromatic route
+requires those inelastic excitation/emission connections before they can be
+enabled. Requests for them fail before starting the native executable; omitted
+water-body process settings retain the existing defaults and consequently also
+require an explicit choice. External aerosol/cloud phase-matrix files still use
+PACE-segment layouts and need a requested-wavelength matrix loader. Built-in
+`Aerosol_Model=-1` or 1–20 are connected. Vector RT and the reviewed `pace_grid`
+viewing-count behavior are supported. Explicit direction lists, scalar RT,
+custom illumination and response integration remain separate operations.
+
+Select `illumination.source = "tsis"` or `"thuillier"` explicitly. Native code
+reads exactly that source, independent of sensor identity or availability of the
+other source. TSIS values are converted from W m⁻² nm⁻¹ to W m⁻² µm⁻¹ by 1000;
+Thuillier values from mW cm⁻² µm⁻¹ by 10. The existing `FSUNCAL` Akima cubic
+interpolator evaluates solar irradiance at the requested wavelength. Elastic
+unit-beam results are scaled by `E0 * abs(mu_solar) / native_downwelling_TOA`.
+Stokes outputs have units W m⁻² sr⁻¹ µm⁻¹, irradiances W m⁻² µm⁻¹. Stokes I,Q,U,V
+and meridian/solar-plane conventions retain native signs. TOA, AirSensor, BOA,
+and (ocean only) TOO label the original detector positions. All new native
+scientific outputs and explicit real inputs retain double precision; PACE's
+existing record precision and result schema are unchanged.
+
+The monochromatic solver receives the requested `MAXMORDINPUT`, without the
+legacy PACE `min(30,nquadainput,MAXMORDINPUT)` bound. Phase preparation uses
+`max(nquadainput,MAXMORDINPUT)` because spherical harmonics require l ≥ m.
+The compiled core stores phase degrees through `MAXLFULL=3000`; exceeding that
+representation requires rebuilding the core. There is no wavelength-count,
+request-count or workload ceiling. `rt_fourier_order_limit` and
+`phase_expansion_order` report the actual bounds; they do not establish
+convergence. Existing collocation, quadrature, optical-depth integration steps
+(0.05 atmosphere, 0.1 ocean), delta fit and atmospheric/ocean absorption-depth
+reduction are retained. As in PACE, the atmospheric absorption removed during
+preparation is restored to non-TOA detector products using the exponential of
+the preserved column depth. This retains the native approximation.
+`physics.atmosphere=false` retains the public 10⁻¹² Rayleigh optical
+depth per atmospheric layer and requires `gas_absorption=false`.
+
+### Model and data coverage
+
+Coverage follows each active model's actual tables, rather than the core's
+broader UV-to-infrared capability or a sensor's band range. The adapter checks
+active supplied table ranges before native execution and never adds extrapolation
+or nearest-grid replacement. Data need not include any instrument responses for
+monochromatic evaluation.
+
+| Quantity | Established preparation and coverage |
+| --- | --- |
+| Built-in aerosol refractive indices | Existing SF component tables, 300–2500 nm, including the optical-depth reference; native wavelength/humidity interpolation and mixing, then direct Mie calculations. Public native RH behavior is retained. |
+| Land surface spectra | Existing local polynomial interpolation of the supplied seven-column spectrum. Requested wavelengths must lie inside its actual wavelength range. Snow additionally needs the public snow BRDF tables. |
+| Pure-water absorption | IOCCG 2018 table through 550 nm and `water_coef.txt` above 550 nm, using existing local quadratic interpolation; actual file coverage is checked. The Lee and Mason files remain inputs of the public reader. |
+| Phytoplankton absorption | BIOSOPE UV median shape below 400 nm, normalized at 440 nm; Bricaud (400–700 nm) or Ciotti's supplied pico/micro table in the visible; the public model sets absorption to zero at/above 700 nm. |
+| Other water optics | Public chlorophyll/sediment/seven-parameter equations, pure-water power-law scattering, and Quan–Fry refractive index through 1100 nm with the public tabulation above it. Salinity 37 PSU retains the public default; the Quan–Fry comment gives an empirical calibration range below 35 PSU. |
+| Solar irradiance | Requested wavelengths must lie within the selected source file's actual nodes. `FSUNCAL` uses its existing cubic interpolation; this changes physical illumination, not response calibration. |
+| Gas absorption | Each native species search interpolates the source cross sections directly at the requested wavelength and the atmospheric pressure/temperature/VMR, then integrates layer optical depth. It does not snap to the 37,618-node PACE working grid. |
+
+Native gas spectral interpolation is linear between source LUT nodes (and uses
+the existing pressure, temperature and H2O-VMR interpolation). Height integration
+is trapezoidal in extinction coefficient; the existing local quadratic
+interpolation maps cumulative optical depth onto the RT layers. The public
+species cutoffs remain: H2O 396–2300 nm, CO2 781–2300 nm, CH4 1084–2300 nm,
+O3 116.65–850 nm, NO2 241.10–759.9 nm. O2 is included inside its seven native
+open intervals: 627–637, 686–700, 758–780, 859–872, 1053–1084, 1237–1308 and
+1551–1603 nm. The native O4 calculation is added to O2: nine empirical Gaussian bands
+centered at 343.4, 360.5, 380.2, 446.7, 477.3, 532.2, 577.2, 630 and 1065.2 nm,
+each truncated at twice its tabulated FWHM. These public equations are retained. Outside a species' modeled range its contribution
+is zero by the established model, rather than evidence of a measured zero
+absorption cross section. Native ozone's negative temperature-fit values are
+set to zero by that existing model. These cutoffs, source precision and tabular
+interpolation limit gas fidelity; a monochromatic result is not a line-by-line
+calculation beyond its supplied data resolution.
+
+The existing water models can set a negative inferred particle-scattering
+coefficient to zero, and retain their empirical parameterizations and bottom
+closure. Those established model choices are unchanged. Arbitrary wavelengths
+do not qualify every model, geometry, parameter range or numerical resolution.
+Exact response loading continues to preserve signed samples, tails, masks,
+zeros and native calibration precision; no response integration is performed.
