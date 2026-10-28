@@ -313,6 +313,18 @@ class Parameters:
             "dtype": np.int32,
         },
     )
+    land_ref_spectra_filename: Any = field(
+        default=None,
+        metadata={
+            "long_name": "land surface reflectance spectrum file",
+            "comment": (
+                "required for negative OCEAN_CASE_SELECT; omitted for nonnegative cases. "
+                "Native format: header, wavelength count, then seven columns: wavelength_nm, "
+                "four surface-model coefficients, real and imaginary refractive index. "
+                "See test/PACE_Simulator/python_script/pace_simulator_twolayer_inputfile_land.py"
+            ),
+        },
+    )
     I_SPHERICAL_SHELL_CORRECTION: Any = field(
         default=None,
         metadata={
@@ -444,13 +456,19 @@ class Parameters:
     OCEAN_CASE_SELECT: Any = field(
         default=None,
         metadata={
-            "flag_values": (-1, 0, 1, 2, 3),
+            "long_name": "surface and ocean optical model",
+            "flag_values": (-203, -202, -201, -200, 0, 1, 2, 3),
             "flag_meanings": (
-                "land"
-                " atmosphere_only"
-                " [Chla]_parameterization"
-                " [Chla]+Sediment"
-                " seven_parameter_model"
+                "Ross_Li_with_polarized_reflectance snow_BRDF mRPV Lambertian_Fresnel_mixture"
+                " ocean_interface_without_water_body"
+                " chlorophyll_parameterization"
+                " chlorophyll_and_sediment"
+                " seven_parameter_ocean_model"
+            ),
+            "comment": (
+                "negative values use land records; nonnegative values use ocean records, including zero. "
+                "Case -200 uses the spectrum's Lambertian fraction (one gives pure Lambertian reflection). "
+                "Case zero retains the ocean interface and disables water-body scattering and fluorescence."
             ),
             "dtype": np.int32,
         },

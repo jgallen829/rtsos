@@ -45,11 +45,13 @@ cmake.args = ["-G", "Unix Makefiles"]
 
 [tool.setuptools_scm]
 write_to = "src/rtsos/_version.py"
+# The public release tag carries a date suffix, outside its PEP 440 version.
+tag_regex = '^v?(?P<version>.+?)(?:-public-\d{4}-\d{2}-\d{2})?$'
 
 [tool.pytest.ini_options]
 cache_dir = "test/.pytest_cache"
 markers = ["native: integration tests requiring native executables and auxiliary data"]
 
 [build-system]
-requires = ["scikit-build-core>=0.11", "numpy>=2.1"]
+requires = ["scikit-build-core>=0.11", "setuptools-scm>=8", "numpy>=2.1"]
 build-backend = "scikit_build_core.build"

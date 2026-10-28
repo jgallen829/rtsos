@@ -147,6 +147,7 @@ class Program:
             self.run(value, path, args.tmp, args.dry)
 
     def run(self, inputs: xr.Dataset, outputs: Path, tmp: Path, dry: bool) -> None:
+        inputs = self.prepare_inputs(inputs)
         # within a temporary directory, write the input files and store
         # outputs from each program execution, run as a subprocess
         with TemporaryDirectory(dir=tmp) as tmpdir:
@@ -181,6 +182,7 @@ class Program:
                 if "phony_dim_0" in one_output.dims:
                     datasets.append(one_output)
                     continue
+                one_input = self.result_inputs(one_input, one_output)
                 # drop parameters duplicated in rt outputs
                 for item in one_input.coords:
                     if item not in one_output:
@@ -207,7 +209,7 @@ class Program:
             if datasets:
                 # concatenate datasets
                 ds = xr.combine_by_coords(
-                    datasets, data_vars="different", compat="equals"
+                    datasets, data_vars="different", coords="different", compat="equals"
                 )
                 # write the concatenated datasets to the outputs directory, with
                 # length one coordinates returned to scalars
@@ -215,6 +217,7 @@ class Program:
 
     def infile(self, path: Path, dataset: xr.Dataset) -> tuple[Path, Path]:
         """Write parameters to a text file, and return its path."""
+        dataset = self.prepare_inputs(dataset)
         self.params = dataset
         lines = []
         for item in self.params:
@@ -234,6 +237,14 @@ class Program:
 
     def post(self, dataset: xr.Dataset) -> xr.Dataset:
         raise NotImplementedError
+
+    def prepare_inputs(self, dataset: xr.Dataset) -> xr.Dataset:
+        """Prepare coordinates for native serialization and output metadata."""
+        return dataset
+
+    def result_inputs(self, inputs: xr.Dataset, outputs: xr.Dataset) -> xr.Dataset:
+        """Return input coordinates to check and merge with a native result."""
+        return inputs
 
     @property
     def params(self) -> tuple:

@@ -280,7 +280,9 @@ def test_pace_split_combine(tmp_path, synthetic_native, partial):
     else:
         main(["PACE_Simulator_DoubleK", "--combine=" + selection, *args])
     result = xr.load_dataset(tmp_path / "outputs.nc")
-    expected = inputs.isel(chla=slice(1, 4), tau_ref_hi=slice(1, 2))
+    expected = PACE_Simulator_DoubleK.init().prepare_inputs(
+        inputs.isel(chla=slice(1, 4), tau_ref_hi=slice(1, 2))
+    )
     xr.testing.assert_identical(
         result.drop_vars("Radiance_TOA").drop_vars("Wavelength"), expected
     )

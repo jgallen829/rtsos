@@ -12,19 +12,163 @@
 #  Contact: Pengwang Zhai  |  [pwzhai@gmail.com]
 # ===============================================================
 
+from pathlib import Path
+
+import numpy as np
+import xarray as xr
+
 from .core import Program
 from .parameters import Parameters as P
+
+# Records omitted by the negative-surface branches of the native PACE parser.
+OCEAN_PARAMETERS = {
+    "albedo_ground",
+    "water_depth_max",
+    "chla",
+    "phytoplankton_index_refraction",
+    "phytoplankton_spectral_slope",
+    "sediment_index_refraction",
+    "sediment_spectral_slope",
+    "sediment_concentration",
+    "adg440",
+    "bbp660_BackscatterCoeff",
+    "Bp660_BackscatterFraction",
+    "Sdg",
+    "Sbp",
+    "S_Bp",
+    "CHLA_HOMOGENEITY",
+    "OCEAN_RAMAN_FLAG",
+    "OCEAN_FCHLA_FLAG",
+    "OCEAN_FCDOM_FLAG",
+    "ap_select",
+    "NonPhotochemicalQuenching_FLAG",
+    "OCEAN_PHMX_ONE",
+    "SUN_GLINT_FLAG",
+}
 
 
 class PACE(Program):
     """Class that drives `rtsos PACE_Simulator_DoubleK`"""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, data_root=None, **kwargs):
         self.program = __name__.replace(".", "_")
+        self.data_root = Path(data_root).expanduser().resolve() if data_root else None
         super().__init__(*args, **kwargs)
+        self._selected_params = tuple(
+            name for name in self._params if name != "land_ref_spectra_filename"
+        )
+        if self.data_root is not None:
+            self.defaults = self.prepare_inputs(self.defaults)
+
+    def prepare_inputs(self, dataset: xr.Dataset) -> xr.Dataset:
+        """Replace path coordinates, resolving direct paths against the working directory.
+
+        CFILE_AP remains a filename relative to Atmos_Dir/atmmod, as read natively.
+        Replacing whole coordinates avoids NumPy fixed-width string truncation.
+        """
+        overrides = {}
+        if self.data_root is not None:
+            overrides = {
+                "Aux_Dir": self.data_root / "Data",
+                "Atmos_Dir": self.data_root / "Gas_Absorption_Coefficients",
+            }
+        for name in (
+            "Aux_Dir",
+            "Atmos_Dir",
+            "Aerosol_Phasematrix_File_Hi",
+            "Aerosol_Phasematrix_File_Low",
+            "land_ref_spectra_filename",
+        ):
+            if name not in dataset:
+                continue
+            coord = dataset[name]
+            values = (
+                np.broadcast_to(str(overrides[name]), coord.shape)
+                if name in overrides
+                else coord.values
+            )
+            resolved = []
+            for value in np.asarray(values).flat:
+                value = str(value)
+                if value:
+                    value = str(Path(value).expanduser().resolve())
+                    if name == "Aux_Dir":
+                        value += "/"  # The native snow reader concatenates without a separator.
+                resolved.append(value)
+            dataset = dataset.assign_coords(
+                {
+                    name: (
+                        coord.dims,
+                        np.array(resolved).reshape(coord.shape),
+                        coord.attrs,
+                    )
+                }
+            )
+        return dataset
+
+    @property
+    def params(self) -> tuple:
+        return self._selected_params
+
+    @params.setter
+    def params(self, dataset: xr.Dataset) -> None:
+        surface = dataset.OCEAN_CASE_SELECT.item()
+        if surface not in (-203, -202, -201, -200, 0, 1, 2, 3):
+            raise ValueError(
+                f"Unsupported OCEAN_CASE_SELECT {surface}; use -203, -202, -201, -200, 0, 1, 2, or 3"
+            )
+        if surface >= 0:
+            self._selected_params = tuple(
+                name for name in self._params if name != "land_ref_spectra_filename"
+            )
+        else:
+            name = "land_ref_spectra_filename"
+            if name not in dataset or not str(dataset[name].item()).strip():
+                raise ValueError(
+                    "land_ref_spectra_filename is required for negative OCEAN_CASE_SELECT"
+                )
+            self._selected_params = tuple(
+                name for name in self._params if name not in OCEAN_PARAMETERS
+            )
+        # Validate the records actually written, after per-state model selection.
+        for name in self._selected_params:
+            if name not in dataset:
+                continue
+            value = dataset[name].item()
+            if isinstance(value, str) and (
+                any(c in value for c in "#\r\n") or value != value.rstrip()
+            ):
+                raise ValueError(
+                    f"{name} cannot contain #, line breaks, or trailing whitespace in native PACE input"
+                )
+
+    def result_inputs(self, inputs: xr.Dataset, outputs: xr.Dataset) -> xr.Dataset:
+        """Use native values for omitted records and check documented flag resets."""
+        replacements = {
+            name: outputs[name]
+            for name in inputs.coords
+            if name in outputs and name not in self.params
+        }
+        forced = {}
+        # main_PACE_Simulator_DoubleK.f90 disables water-body processes here.
+        if inputs.OCEAN_CASE_SELECT.item() <= 0:
+            forced.update(
+                OCEAN_RAMAN_FLAG=0,
+                OCEAN_FCHLA_FLAG=0,
+                OCEAN_FCDOM_FLAG=0,
+                OCEAN_PHMX_ONE=1,
+            )
+        if inputs.ATMOS_ZERO.item() or not inputs.gas_abs_flag.item():
+            forced["MONOCHROMATIC_FLAG"] = 1
+        if inputs.ATMOS_ZERO.item():
+            forced["SUN_GLINT_FLAG"] = 1
+        for name, value in forced.items():
+            if name in inputs and name in outputs:
+                replacements[name] = xr.full_like(inputs[name], value)
+        return inputs.assign_coords(replacements)
 
 
-def init() -> PACE:
+def init(*, data_root: str | Path | None = None) -> PACE:
     """Prepare subclass for execution defaults"""
 
     # values to write, in the order below, to the input file
@@ -86,6 +230,7 @@ def init() -> PACE:
         P.CFILE_AP: "afglus.dat",
         P.Aerosol_Phasematrix_File_Hi: "",
         P.Aerosol_Phasematrix_File_Low: "",
+        P.land_ref_spectra_filename: "",
     }
 
     # create a dataset to hold the inputs as coordinates
@@ -93,4 +238,4 @@ def init() -> PACE:
     dataset = params.make_dataset(values)
 
     # the callable object that runs the given program
-    return PACE(defaults=dataset, params=tuple(values))
+    return PACE(defaults=dataset, params=tuple(values), data_root=data_root)

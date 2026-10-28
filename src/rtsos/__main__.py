@@ -73,13 +73,18 @@ subparsers.add_parser(
         " top-of-atmosphere (i.e. satellite based) measurements of the Earth's surface."
     ),
 )
-subparsers.add_parser(
+pace_parser = subparsers.add_parser(
     name="PACE_Simulator_DoubleK",
     parents=[common],
     description=(
         "The PACE simulator runs the monochromatic RTSOS, with a  a list of built-in"
         " aerosol and ocean inherent optical properties."
     ),
+)
+pace_parser.add_argument(
+    "--data-root",
+    type=Path,
+    help="directory containing Data and Gas_Absorption_Coefficients (overrides input coordinates)",
 )
 subparsers.add_parser(
     name="Aerosol_Phmx_Cal",
@@ -92,7 +97,12 @@ subparsers.add_parser(
 
 def main(argv: str | None = None) -> None:
     args = parser.parse_args(argv)
-    program = import_module(f"{__package__}.{args.program}").init()
+    module = import_module(f"{__package__}.{args.program}")
+    program = (
+        module.init(data_root=args.data_root)
+        if args.program == "PACE_Simulator_DoubleK"
+        else module.init()
+    )
     program(args)
 
 

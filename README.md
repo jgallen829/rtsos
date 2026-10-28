@@ -131,6 +131,28 @@ then CMake may not have found the prerequisties. You can provide an environment 
 with their prefix, e.g. `export HDF5_ROOT=...`. The prefix is the path up to the folder
 containing the "lib" folder with the HDF5 libraries.
 
+For a build from a Git checkout, retain the release tags so the version provider can
+derive the package version. The public tag `v1.0-public-2025-10-23` supplies version
+`1.0`; subsequent commits receive a development version. No pretend-version
+environment variable is needed. To build a wheel locally, run:
+
+```shell
+$ python -m pip wheel --no-deps --wheel-dir dist .
+```
+
+Some macOS HDF5 installations expose the Fortran library but omit the high-level
+Fortran library location during CMake discovery. If CMake reports that it cannot
+locate `hdf5::hdf5_hl_fortran`, provide the installed library explicitly, using
+your HDF5 prefix (and its actual library filename):
+
+```shell
+$ export HDF5_ROOT="$CONDA_PREFIX"
+$ CMAKE_ARGS="-DHDF5_Fortran_HL_LIBRARY=$HDF5_ROOT/lib/libhdf5_hl_fortran.dylib" python -m pip wheel --no-deps --wheel-dir dist .
+```
+
+The same setting can be passed as `-DHDF5_Fortran_HL_LIBRARY=...` to a direct
+CMake configure. Use a compiler and HDF5 Fortran modules from compatible toolchains.
+
 ### 1.2 Auxiliary Data
 
 In addition to the software, simulating the PACE instruments and generating atmospheric
@@ -362,6 +384,98 @@ NetCDF file.
 The default PACE template retains the legacy 20-state sweep: five `chla` values,
 two solar zenith angles, and two `tau_ref_hi` values. Add `--dry-run` to generate
 the native input files without running the simulator.
+
+To use the extracted auxiliary data, pass the directory containing both `Data`
+and `Gas_Absorption_Coefficients`:
+
+```shell
+$ rtsos PACE_Simulator_DoubleK --data-root /path/to/RTSOS_data --pre inputs.nc
+$ rtsos PACE_Simulator_DoubleK --data-root /path/to/RTSOS_data inputs.nc outputs.nc
+```
+
+`--data-root` replaces `Aux_Dir` and `Atmos_Dir`, including in an existing input
+dataset. Without it, the template retains the legacy `Auxiliary_Files` and
+`Gas_Absorption_Coefficients` defaults. The Python initializer uses the same path
+handling:
+
+```python
+from rtsos.PACE_Simulator_DoubleK import init
+
+pace = init(data_root="/path/to/RTSOS_data")
+inputs = pace.defaults
+# Select one state from the default sweep when only one simulation is wanted.
+inputs = inputs.isel(Solar_Zenith_Angle=0, tau_ref_hi=0, chla=0)
+inputs.to_netcdf("inputs.nc")
+```
+
+For individual path edits, replace the whole coordinate. In-place assignment such
+as `inputs.Aux_Dir[()] = longer_path` can silently truncate fixed-width strings.
+Preserve metadata by supplying the coordinate's dimensions and attributes:
+
+```python
+inputs = inputs.assign_coords(
+    Aux_Dir=((), "/path/to/Data", inputs.Aux_Dir.attrs),
+    Atmos_Dir=((), "/path/to/Gas_Absorption_Coefficients", inputs.Atmos_Dir.attrs),
+)
+```
+
+Direct paths are expanded and resolved relative to the process working directory
+before native execution, including aerosol phase-matrix files and the land
+spectrum. `CFILE_AP` remains a profile filename such as `afglus.dat`, read under
+`Atmos_Dir/atmmod/`. Spaces in paths are supported; `#`, line breaks and trailing
+whitespace cannot be represented faithfully by the native input format. The
+native readers use fixed character buffers (180 bytes for atmospheric/gas paths,
+360 for PACE input and other filenames); full paths, including filenames appended
+inside the readers, must fit those buffers.
+
+`OCEAN_CASE_SELECT` is the legacy native selector for both land surfaces and
+ocean optical models. Its supported values are:
+
+| Code | Model |
+| --- | --- |
+| `-203` | Ross–Li land BRDF with a polarized-reflectance term. |
+| `-202` | Snow BRDF from the native lookup data, using the supplied spectral albedo. |
+| `-201` | Modified Rahman–Pinty–Verstraete (mRPV) land model. |
+| `-200` | Lambertian/Fresnel land mixture; a Lambertian fraction of one gives a pure Lambertian surface. |
+| `0` | Ocean interface without a scattering water body; surface reflection remains. |
+| `1` | Native chlorophyll-based ocean optical model. |
+| `2` | Native chlorophyll-and-sediment ocean optical model. |
+| `3` | Seven-parameter ocean optical model. |
+
+Case `0` is not an atmosphere-only calculation: it retains the ocean interface
+and the applicable surface processes. The native program disables Raman
+scattering and both ocean fluorescence flags for this case and for land. Result
+coordinates reflect those effective native values; the serialized request keeps
+its original flag values. Other documented native resets, such as enabling
+monochromatic processing when gas absorption is disabled, are handled similarly.
+
+The seven parameters in case `3` are `chla`, `adg440`,
+`bbp660_BackscatterCoeff`, `Bp660_BackscatterFraction`, `Sdg`, `Sbp`, and `S_Bp`.
+The integer codes identify the existing implementations; they do not describe
+every possible model of a land surface or water body.
+
+For land, choose one of the four negative codes and supply the spectrum file:
+
+```python
+import numpy as np
+
+inputs = inputs.assign_coords(
+    OCEAN_CASE_SELECT=np.int32(-200),
+    land_ref_spectra_filename=(
+        (), "/path/to/land_ref_spectra_Lamb", inputs.land_ref_spectra_filename.attrs
+    ),
+)
+inputs.to_netcdf("land.nc")
+```
+
+The spectrum has a header, a wavelength count, then seven columns: wavelength in
+nm, four model-specific surface coefficients, and the real and imaginary
+refractive index. The supplied native land generator documents these columns
+and gives examples for each surface type. Negative cases omit the ocean input
+records; nonnegative cases, including zero (ocean interface without a water
+body), retain them. The land-spectrum record is written only for negative cases.
+Ocean coordinates retained in a land dataset do not affect its native input;
+select their sweep dimensions explicitly if they would otherwise repeat land work.
 
 ### Python tests
 
