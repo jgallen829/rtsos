@@ -96,7 +96,7 @@ subparsers.add_parser(
 
 simulate_parser = subparsers.add_parser(
     "simulate",
-    description="Simulate one readable physical case with the native PACE adapter.",
+    description="Simulate one physical case with PACE, monochromatic or full-response integration.",
 )
 simulate_parser.add_argument(
     "case", type=Path, help="TOML case file; data paths are relative to its directory"

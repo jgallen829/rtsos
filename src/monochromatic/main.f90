@@ -27,8 +27,8 @@ USE MONOCHROMATIC_RESULT
 USE SnowBRDF
 IMPLICIT NONE
 
-! The physical records retain the public parser's order. The final two records
-! give the actual wavelength (nm) and explicit solar source.
+! Physical records retain the public parser order. The final records give the
+! explicit solar source, wavelength count, and that many wavelengths in nm.
 INTEGER :: NTLYER,NTLYERA,NTLYERO,NREC,NCOLINPUT,NQUADAINPUT,NQUADOINPUT
 INTEGER :: MAXMORDINPUT_SAVE,NUMMIERT,MAXLORDINPUT,MAXMORDINPUT,DELTAM_INPUT
 INTEGER :: NTHETAOUT,NPHIOUT,IAEROSOL,INTTMP,nopt
@@ -45,7 +45,10 @@ DOUBLE PRECISION,ALLOCATABLE :: gc(:,:),gh(:,:),gco(:,:),gch(:,:),go(:,:),goz(:,
 LOGICAL :: WLR_FLAG_INPUT,WCFLG_INPUT,GAS_ABS_FLAG,file_e
 CHARACTER(LEN=360) :: Land_HEADER,CFILE_AP,INFILE,OUTFILE,CFILE_AEROSOLS(NUMMIEUSE)
 CHARACTER(LEN=20) :: solar_policy
-INTEGER :: NARGS,IARGC
+INTEGER :: NARGS,IARGC,nwave,iwave
+DOUBLE PRECISION,ALLOCATABLE :: wavelengths(:),esun(:),irrad_all(:,:,:),stokes_all(:,:,:,:,:)
+DOUBLE PRECISION,ALLOCATABLE :: taur_all(:,:),gas_all(:,:),ext_all(:,:),scat_all(:,:)
+DOUBLE PRECISION :: start_time,prepared_time,finish_time
 ! Read inputs from the command line
 NARGS = IARGC()
 IF(NARGS.LT.1) THEN
@@ -221,8 +224,14 @@ READ(1,'(A)')CFILE_AEROSOLS(2) ! AEROSOL PHASE MATRIX FILE top layer
 IF(OCEAN_CASE_SELECT < 0) READ(1,'(A)')land_ref_spectra_filename  !land surface reflectance filename
 
 READ(1,'(A)')OUTFILE
-READ(1,*)requested_nm
 READ(1,'(A)')solar_policy
+READ(1,*)nwave
+IF(nwave<1) ERROR STOP 'At least one wavelength is required'
+ALLOCATE(wavelengths(nwave),esun(nwave))
+DO iwave=1,nwave
+ READ(1,*)wavelengths(iwave)
+ENDDO
+requested_nm=wavelengths(1)
 CLOSE(1)
 
 IF(index(aux_dir,'#')>1) &
@@ -356,7 +365,9 @@ DIFFUSE_TRANSMITTANCE=.false.
 MU_IN=-1.0d0*ABS(COS(THETA0/180.D0*PI))
 
 
-! Requested monochromatic optics, with separate physical reference wavelengths.
+CALL CPU_TIME(start_time)
+! Scene preparation is shared across the wavelength set. Optical storage has
+! only the current wavelength and physical reference slots, independent of count.
 IF(OCEAN_RAMAN_FLAG .OR. OCEAN_FCHLA_FLAG .OR. OCEAN_FCDOM_FLAG .OR. NPQ_FLAG) &
  ERROR STOP 'Requested-wavelength inelastic excitation/emission preparation is not connected'
 IF(IAEROSOL < -1) ERROR STOP 'Requested-wavelength external particle matrix loading is not connected'
@@ -371,14 +382,16 @@ CALL Atmosphere_Profile_READIN(CFILE_AP)
 CALL Surface_Pressure_Rescale(PRESSURE_SURFACE)
 CALL GAS_COLUMN_RESCALE(OZONE_COLUMN,H2O_COLUMN)
 CALL NO2_COLUMN_RESCALE(NO2_COLUMN)
-ALLOCATE(gc(1,NPGRID),gh(1,NPGRID),gco(1,NPGRID),gch(1,NPGRID), &
- go(1,NPGRID),goz(1,NPGRID),gn(1,NPGRID))
+ALLOCATE(gc(nwave,NPGRID),gh(nwave,NPGRID),gco(nwave,NPGRID),gch(nwave,NPGRID), &
+ go(nwave,NPGRID),goz(nwave,NPGRID),gn(nwave,NPGRID))
 gc=0; gh=0; gco=0; gch=0; go=0; goz=0; gn=0
-IF(GAS_ABS_FLAG) CALL PREPARE_GAS_ABSORPTION(1,prep_wave(1:1),gc,gh,gco,gch,go,goz,gn)
+IF(GAS_ABS_FLAG) CALL PREPARE_GAS_ABSORPTION(nwave,wavelengths,gc,gh,gco,gch,go,goz,gn)
 CALL SUNLREADIN(aux_dir,TRIM(solar_policy))
-IF(requested_nm/1000.0D0<WVSUN(1) .OR. requested_nm/1000.0D0>WVSUN(NSUNL)) &
+IF(ANY(wavelengths/1000.0D0<WVSUN(1)) .OR. ANY(wavelengths/1000.0D0>WVSUN(NSUNL))) &
  ERROR STOP 'Requested wavelength outside selected solar data'
-CALL FSUNCAL(requested_nm/1000.0D0,esun_value)
+DO iwave=1,nwave
+ CALL FSUNCAL(wavelengths(iwave)/1000.0D0,esun(iwave))
+ENDDO
 ALLOCATE(MUOUT(NTHETAOUT),PHIOUT(NPHIOUT))
 CALL MUPHIOUTASS(NTHETAOUT,NPHIOUT,MUOUT,PHIOUT)
 MAXLORDINPUT=MAX(NQUADAINPUT,MAXMORDINPUT_SAVE)
@@ -415,8 +428,8 @@ ALLOCATE(CHLA_VERTICAL_PROFILE(NWATER_DEPTH))
 ALLOCATE(TAU_REDUCE_ATMOS_PRESERVE(NTLYERA+1),TAU_REDUCE_OCEAN_PRESERVE(NTLYERO+1))
 CALL WATER_DEPTH_SETUP
 CALL PHMXMIE_ALLO(NUMMIEUSE,OCEAN_CASE_SELECT,nopt,prep_wave(1:nopt))
-CALL prepare_particles
-CALL PREPARE_PARTICLE_COEFFICIENTS(NUMMIEUSE,MAXLORDINPUT,DELTAM_INPUT,1,nopt)
+CALL prepare_particles(nopt)
+CALL PREPARE_PARTICLE_COEFFICIENTS(NUMMIEUSE,MAXLORDINPUT,DELTAM_INPUT,1,1)
 CEXT_REF=0.0D0
 CEXT_REF(1:NUMMIEUSE)=CEXT_ARSL_BAND(1:NUMMIEUSE,2)
 CALL PREPARE_AEROSOL_PROFILE(IAEROSOL,NTLYERA,PNDLY,ARSL_TYPE)
@@ -426,9 +439,24 @@ IF(OCEAN_CASE_SELECT>=0)THEN
  CALL WATER_ABSORPTION_MCF_READ
  CALL WATER_ABSORPTION_IOCCG_READ
 ENDIF
-WAVELENGTH_MICRON=requested_nm/1000.0D0
+ALLOCATE(irrad_all(NDET,2,nwave),stokes_all(NDET,NTHETAOUT,NPHIOUT,4,nwave))
+ALLOCATE(taur_all(NTLYERA,nwave),gas_all(NTLYERA,nwave),ext_all(NTLYERA,nwave),scat_all(NTLYERA,nwave))
+CALL CPU_TIME(prepared_time)
+WRITE(*,*) 'Shared scene preparation count: 1; wavelengths: ',nwave
+DO iwave=1,nwave
+ requested_nm=wavelengths(iwave)
+ esun_value=esun(iwave)
+ IF(iwave>1)THEN
+  prep_wave(1)=requested_nm
+  OPTICAL_WAVELENGTHS(1)=requested_nm
+  ! Only the current optical slot changes. Reference cross sections persist;
+  ! their phase matrices are not consumed by a requested-wavelength RT solve.
+  CALL prepare_particles(1)
+  CALL PREPARE_PARTICLE_COEFFICIENTS(NUMMIEUSE,MAXLORDINPUT,DELTAM_INPUT,1,1)
+ ENDIF
+ WAVELENGTH_MICRON=requested_nm/1000.0D0
 CALL TAURCAL(WAVELENGTH_MICRON,NTLYERA,TAUR,DEPOL_A)
-CALL PREPARE_GAS_LAYERS(GAS_ABS_FLAG,NTLYERA,1,1,gc,gh,gco,gch,go,goz,gn, &
+CALL PREPARE_GAS_LAYERS(GAS_ABS_FLAG,NTLYERA,nwave,iwave,gc,gh,gco,gch,go,goz,gn, &
  TAU_TG,TAU_TG_H2O,TAU_TG_CO2,TAU_TG_CH4,TAU_TG_O2,TAU_TG_O3,TAU_TG_NO2)
 CALL PREPARE_RT(0,1,WAVELENGTH_MICRON,NREC,NTLYERA,NTLYERO,PNDLY,ARSL_TYPE, &
  TAUR,DEPOL_A,TAU_TG,TAU_ARSL_Ext_TMP,TAU_ARSL_Scat_TMP,RECDATASTREAM,NTLYER,NUMMIERT, &
@@ -446,22 +474,33 @@ IF(ABSORPTION_TAU_REDUCE_FLAG)THEN
  DIRAD(2:NDET,:)=DIRAD(2:NDET,:)*EXP(-TAU_REDUCE_ATMOS_PRESERVE(NTLYERA+1))
  DSTOKES(2:NDET,:,:,:)=DSTOKES(2:NDET,:,:,:)*EXP(-TAU_REDUCE_ATMOS_PRESERVE(NTLYERA+1))
 ENDIF
-CALL write_result(OUTFILE,requested_nm,esun_value,MAXMORDINPUT,MAXLORDINPUT, &
- NDET,NTHETAOUT,NPHIOUT,NTLYERA,MUOUT,PHIOUT,TAUR,TAU_TG,TAU_ARSL_Ext_TMP,TAU_ARSL_Scat_TMP,DIRAD,DSTOKES)
+ irrad_all(:,:,iwave)=DIRAD
+ stokes_all(:,:,:,:,iwave)=DSTOKES
+ taur_all(:,iwave)=TAUR
+ gas_all(:,iwave)=TAU_TG
+ ext_all(:,iwave)=TAU_ARSL_Ext_TMP
+ scat_all(:,iwave)=TAU_ARSL_Scat_TMP
+ENDDO
+CALL CPU_TIME(finish_time)
+WRITE(*,*) 'Scene preparation CPU seconds: ',prepared_time-start_time
+WRITE(*,*) 'Wavelength evaluation CPU seconds: ',finish_time-prepared_time
+CALL write_result(OUTFILE,nwave,wavelengths,esun,MAXMORDINPUT,MAXLORDINPUT, &
+ NDET,NTHETAOUT,NPHIOUT,NTLYERA,MUOUT,PHIOUT,taur_all,gas_all,ext_all,scat_all,irrad_all,stokes_all)
 CONTAINS
-SUBROUTINE prepare_particles
+SUBROUTINE prepare_particles(last_slot)
+ INTEGER,INTENT(IN) :: last_slot
  DOUBLE PRECISION :: rr1,vv1,rr2,vv2,nd1,nd2,mr1(nopt),mi1(nopt),mr2(nopt),mi2(nopt)
  INTEGER :: kind
  CALL PHMXMIE_INIT(1,IAEROSOL,NUMMIEUSE,AeroFMF,RH_simu,nopt,rr1,vv1,rr2,vv2, &
   WV_PACE_REF,mr1,mi1,mr2,mi2,nd1,nd2,PHYTOPLANKTON_INDEX_REFRACTION, &
   PHYTOPLANKTON_SPECTRAL_SLOPE,SEDIMENT_INDEX_REFRACTION,SEDIMENT_SPECTRAL_SLOPE, &
-  prep_wave(1:nopt),1,nopt)
+  prep_wave(1:nopt),1,last_slot)
  IF(OCEAN_CASE_SELECT==2)THEN
   DO kind=2,3
    CALL PHMXMIE_INIT(kind,IAEROSOL,NUMMIEUSE,AeroFMF,RH_simu,nopt,rr1,vv1,rr2,vv2, &
     WV_PACE_REF,mr1,mi1,mr2,mi2,nd1,nd2,PHYTOPLANKTON_INDEX_REFRACTION, &
     PHYTOPLANKTON_SPECTRAL_SLOPE,SEDIMENT_INDEX_REFRACTION,SEDIMENT_SPECTRAL_SLOPE, &
-    prep_wave(1:nopt),1,nopt)
+    prep_wave(1:nopt),1,last_slot)
   ENDDO
  ENDIF
 END SUBROUTINE

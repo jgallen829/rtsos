@@ -101,15 +101,24 @@ def simulate(
     if not isinstance(case, Case):
         case = load_case(case)
     method = case.spectral.get("method")
-    if method == "monochromatic":
+    responses = None
+    if method in ("monochromatic", "response_integration"):
         from .monochromatic import Monochromatic, case_inputs, solar_source, check_data
 
-        program = Monochromatic()
+        if method == "response_integration":
+            from . import bands
+
+            responses = case.load_responses()
+            inputs = bands.case_inputs(case, responses)
+            program = bands.ResponseIntegration(responses)
+        else:
+            inputs = case_inputs(case)
+            program = Monochromatic()
     else:
         program = init()
-    inputs = case_inputs(case)
+        inputs = case_inputs(case)
     illumination = None if dry_run else solar_source(case)
-    if method == "monochromatic" and not dry_run:
+    if method in ("monochromatic", "response_integration") and not dry_run:
         check_data(case, inputs, illumination)
     outputs = Path(outputs).expanduser().resolve()
     program.run(
@@ -127,8 +136,10 @@ def simulate(
         attributes["channel_selection"] = case.sensor["channels"]
     with Dataset(outputs, "a") as result:
         result.setncatts(attributes)
-        if method == "monochromatic":
+        if method in ("monochromatic", "response_integration"):
             _monochromatic_metadata(result)
+        if responses is not None:
+            bands.write_calibrations(result, responses)
     return xr.load_dataset(outputs)
 
 
@@ -142,6 +153,7 @@ def _monochromatic_metadata(result):
         )
     )
     for name, variable in result.variables.items():
+        name = name.removeprefix("Node_")
         if name.startswith("Stokes_Vector"):
             variable.units = "W m-2 sr-1 um-1"
         elif name.startswith("Irradiance_") or name == "Solar_Irradiance":

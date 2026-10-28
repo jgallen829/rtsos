@@ -1,4 +1,4 @@
-# Physical cases, monochromatic evaluation and exact response data
+# Physical cases, monochromatic evaluation and full-response bands
 
 `pace_ocean.toml` and `pace_land.toml` each specify one physical state. Both select
 solar zenith 20 degrees and upper aerosol optical depth 0.125; ocean chlorophyll
@@ -32,7 +32,7 @@ Every case has eight plain TOML tables (including empty tables when needed):
 | `physics` | Scattering treatment, spherical approximation and process choices. |
 | `numerics` | Numerical resolution and expansion settings. |
 | `illumination` | Solar reference policy. |
-| `spectral` | Spectral calculation method and future requested wavelengths. |
+| `spectral` | Spectral calculation method and requested monochromatic wavelengths. |
 | `data` | Auxiliary and gas absorption data locations. |
 
 Relative direct paths use the case file's directory, independent of the process
@@ -130,9 +130,9 @@ No water-body properties belong in a land case.
 Their order and wavelength arrays remain the native output order. The legacy
 selector 1 remains available in the legacy command; its output includes retained
 SWIR slots even though it skips those integrations, so it is not presented as a
-complete-channel selection in this interface. Per-channel or detector/mirror
-execution needs the next native connection. The PACE driver fixes OCI mirror
-side to zero (the first source mirror).
+complete-channel selection in this interface. Individual complete OCI channels and detector/mirror variants can instead use
+`response_integration` below. The PACE driver retains its fixed OCI mirror side
+zero (the first source mirror).
 
 `geometry.mode = "pace_grid"` takes `solar_zenith_deg` in [0, 90),
 `sensor_height_km`, `zenith_count` and `azimuth_count`. Counts of one give zero
@@ -188,7 +188,7 @@ reset to its compiled-grid monochromatic processing; the effective flag stays
 in the output. This does not mean evaluation at arbitrary requested wavelengths.
 All existing Stokes, irradiance, wavelength, and detector variables are retained.
 
-## Exact response data and future requests
+## Exact response data and selection
 
 `response.toml` demonstrates unequal-length channels, signed tails, zeros,
 separate nominal labels, explicit wavelength units and mirror variants.
@@ -250,7 +250,18 @@ its mineral optics at the model's 665 nm normalization wavelength. These physica
 reference wavelengths do not replace the evaluated wavelength. The original
 public atmosphere, Rayleigh, built-in aerosol, land, water, phase expansion and
 RTSOS solver routines are shared with PACE. Global state is isolated in one
-process per requested wavelength, through the existing `Program` mechanics.
+process per scene's wavelength set, through the existing `Program` mechanics.
+Atmospheric profiles, gas LUT reads/searches, solar, land/water tables, viewing
+grid and aerosol profile are prepared together. Optical storage holds the
+current wavelength and physical reference slots; reference cross sections are
+reused. Each new wavelength still receives its own Mie, Rayleigh, gas-layer,
+phase-mixing and RT calculation. Exact common wavelengths are solved once, then
+mapped back to every request in supplied order. Nearby nodes are never merged.
+Gas profiles and radiometric output storage scale with unique wavelength count;
+Stokes output storage also scales with the requested viewing grid. There is no
+hidden count ceiling or automatic thinning.
+Native wavelength counts/indices use the compiler's default integer
+representation (int32 in the supplied build), as distinct from an operating cap.
 
 All eight named surface/water choices above retain their public equations and
 parameters. The ocean example uses the existing chlorophyll model, 20 °C water,
@@ -263,7 +274,7 @@ require an explicit choice. External aerosol/cloud phase-matrix files still use
 PACE-segment layouts and need a requested-wavelength matrix loader. Built-in
 `Aerosol_Model=-1` or 1–20 are connected. Vector RT and the reviewed `pace_grid`
 viewing-count behavior are supported. Explicit direction lists, scalar RT,
-custom illumination and response integration remain separate operations.
+and custom illumination retain their explicit capability boundaries.
 
 Select `illumination.source = "tsis"` or `"thuillier"` explicitly. Native code
 reads exactly that source, independent of sensor identity or availability of the
@@ -331,4 +342,126 @@ coefficient to zero, and retain their empirical parameterizations and bottom
 closure. Those established model choices are unchanged. Arbitrary wavelengths
 do not qualify every model, geometry, parameter range or numerical resolution.
 Exact response loading continues to preserve signed samples, tails, masks,
-zeros and native calibration precision; no response integration is performed.
+zeros and native calibration precision independently of the selected spectral
+calculation method. Full-response integration is described below.
+
+
+## Full-response band simulation
+
+`response_ocean.toml` and `response_land.toml` run the same physical scene at
+**every supplied node** of the selected complete responses. They select red,
+then both supplied blue mirror variants from `response.toml`. Grids have unequal
+lengths and use both nm and um; the blue signed tail and zero endpoints take part
+in the calculation. `custom_response.toml` is a smaller land configuration that
+selects mirror zero. Set the data paths and run, from this directory:
+
+```sh
+rtsos simulate response_ocean.toml ocean_bands.nc
+rtsos simulate response_land.toml land_bands.nc
+rtsos simulate custom_response.toml custom_bands.nc
+```
+
+```python
+from rtsos import load_case, simulate
+
+case = load_case("response_ocean.toml")
+case.sensor["channels"] = ["blue", "red"]  # Complete channels, in this order.
+result = simulate(case, "ocean_bands.nc")
+print(result[["Solar_Irradiance", "Stokes_Vector_TOA"]])
+print(result.channel_id.values, result.detector.values, result.mirror.values)
+```
+
+The source representation and selection contracts above continue to apply.
+`[spectral]` contains only `method = "response_integration"`; `[sensor]` owns
+`response_file`, `response_format` (`toml` or `oci`), optional `channels` ID list,
+`detector` and `mirror`. Omit `channels` for all supplied complete channels; omit
+variant filters to keep all supplied variants. Requested ID order is retained,
+with source variant order inside each ID. No absent calibration is interpolated.
+Illumination must explicitly select `tsis` or `thuillier`. This route uses the
+same supported physical models/process checks and `pace_grid` geometry as the
+monochromatic route. Unsupported requested processes fail before execution.
+
+### Integration and data contract
+
+Let x_j be the original sample wavelengths converted to **micrometres**, R_j
+the signed source responses, and X_j the evaluated radiance or irradiance per
+micrometre. Define composite trapezoids on the sampled product:
+
+```text
+T(Y) = sum_j (x[j+1] - x[j]) * (Y[j] + Y[j+1]) / 2
+A    = T(R)
+band_X = T(R * X) / A
+```
+
+This is a normalized spectral-density band product: Stokes radiance remains
+W m^-2 sr^-1 um^-1, and solar/detector irradiance remains W m^-2 um^-1.
+The response is a relative dimensionless calibration. Normalizing this equation
+does not normalize or otherwise change its stored source samples. A negative
+signed area is permitted; negative contributions remain signed. A finite zero
+band result remains zero. Both products use the same wavelength measure. For
+native illumination conversions and unit-beam scaling, see the monochromatic
+section above. Solar irradiance is integrated as its own product. No
+monochromatic reflectance ratios are averaged, and no derived reflectance is
+published. A reflectance subsequently calculated from these products must use
+consistently integrated illumination and the applicable geometry definition.
+
+This quadrature uses every supplied response sample, including zero endpoints,
+signed tails and overlapping channel nodes. It integrates the *sampled product*
+with trapezoids; it does not analytically integrate the product of interpolated
+response and interpolated spectra. Constant spectral cases are exact up to
+floating-point roundoff; accuracy on variable spectra follows the supplied grid
+and this quadrature. Full-sample execution does not establish spectral or angular
+convergence and is distinct from PACE double-k processing.
+
+Execution requires at least two finite, positive, strictly increasing wavelengths
+and finite unmasked responses in every selected variant. Masked/missing samples,
+reversed/duplicate wavelength nodes and zero signed area are rejected without
+sorting, filling, clipping or trimming a source calibration. Signed area whose
+magnitude is no larger than float64 epsilon times T(abs(R)) is numerically
+degenerate and rejected. Data loading still retains such arrays and their masks;
+they can be inspected without execution. All nodes must satisfy actual active
+model/solar coverage, even where response is zero. There is no out-of-coverage
+endpoint exemption. Nonfinite native radiometric values prevent publishing the
+affected band product. Independent sweep recovery remains separate work.
+
+### Products and OCI execution
+
+`channel` is a zero-based complete-variant identity, with `channel_id`, `detector`,
+`mirror` (text, empty if absent) and `nominal_label`. Calibration centers and their
+per-channel `calibration_wavelength_unit` remain separate from the unique
+`Wavelength_Evaluated(spectral_node)` array. Missing centers remain missing. No
+derived effective wavelength is supplied. `response_area(channel)` is signed,
+in um. `Stokes_Vector_*`, `Irradiance_*` and `Solar_Irradiance` are band products;
+`Node_` versions keep evaluated spectra. `Tau_*` stay monochromatic diagnostics
+on `spectral_node`, with no claim of equivalent physical band optical depth.
+Stokes, angle and detector conventions are unchanged. The NetCDF also contains
+`calibration/0`, `calibration/1`, ... groups in channel order, each holding exact
+source `wavelength` and `response` arrays in their original dtypes and explicit
+`wavelength_mask`/`response_mask` arrays. Open those groups with netCDF4 or
+`xr.open_dataset(path, group="calibration/0")`.
+
+For a supplied OCI LUT, change the sensor table in either response example:
+
+```toml
+[sensor]
+name = "oci"
+response_format = "oci"
+response_file = "/path/to/PACE_OCI_L1B_LUT_RSR_baseline_1.1.1.nc"
+channels = ["oci_red_001", "oci_blue_018"]
+mirror = 0
+```
+
+Use `rtsos simulate your_oci_case.toml oci_bands.nc` or `simulate` as above.
+Omit `mirror` to execute every supplied mirror for these IDs. Complete OCI
+calibrations may share thousands of nodes and span far beyond a nominal band.
+All retained tails are evaluated; all actual coverage requirements still apply.
+For example, the baseline 1.1.1 LUT inspected here supplies 20,926 nodes spanning
+306–2398.5 nm for every variant. The example land spectrum ends at 2260 nm;
+replace it with a supplied spectrum covering the full grid before using that
+LUT for land. The adapter rejects this coverage gap rather than extrapolating.
+Common wavelengths are evaluated once across channels/mirrors, without dropping
+any source sample or variant. This interface does not apply the legacy PACE
+response thresholds, band segmentation, mirror default, or double-k method.
+Runtime still depends on unique-node count, scene, gas absorption and the
+viewing/numerical settings; no dense-OCI performance or convergence guarantee
+follows from the small examples.

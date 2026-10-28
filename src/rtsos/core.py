@@ -156,15 +156,9 @@ class Program:
             outdir.mkdir(parents=True, exist_ok=True)
             # iterate over all coordinate combinations
             datasets = []
-            shape = tuple(inputs.sizes.values())
-            each_input = xr.DataArray(
-                # FIXME dtype should be int (the default), but see https://github.com/pydata/xarray/issues/7423
-                data=np.arange(np.prod(shape), dtype=float).reshape(shape),
-                coords=inputs.coords,
-            )
-            for _, one_input in groupby(dataset=inputs, groups=each_input):
-                # convert a zero-dimensional dataset to a parameter file
-                # that gets copied to the folder with the combined outputs
+            for one_input in self.execution_inputs(inputs):
+                # Serialize this execution group's native records, retained
+                # beside the combined outputs.
                 infile, outfile = self.infile(tmpdir, one_input.squeeze())
                 copy(tmpdir / infile, outdir)
                 if dry:
@@ -177,7 +171,7 @@ class Program:
                 if mie_table_cal in one_input and one_input[mie_table_cal] == 1:
                     continue
                 # lazy read for outfile metadata
-                one_output = xr.open_dataset(tmpdir / outfile)
+                one_output = self.read_output(tmpdir / outfile, one_input)
                 # expect non-mergeable output with any phony dims
                 if "phony_dim_0" in one_output.dims:
                     datasets.append(one_output)
@@ -187,7 +181,7 @@ class Program:
                 for item in one_input.coords:
                     if item not in one_output:
                         continue
-                    if one_input[item] == one_output[item]:
+                    if (one_input[item] == one_output[item]).all():
                         # keep item as coordinate
                         one_output = one_output.drop_vars(item)
                     elif np.isnan(one_input[item]):
@@ -211,9 +205,8 @@ class Program:
                 ds = xr.combine_by_coords(
                     datasets, data_vars="different", coords="different", compat="equals"
                 )
-                # write the concatenated datasets to the outputs directory, with
-                # length one coordinates returned to scalars
-                ds.to_netcdf(path=outputs)
+                # Form and publish the combined scientific product.
+                self.result_dataset(ds).to_netcdf(path=outputs)
 
     def infile(self, path: Path, dataset: xr.Dataset) -> tuple[Path, Path]:
         """Write parameters to a text file, and return its path."""
@@ -237,6 +230,24 @@ class Program:
 
     def post(self, dataset: xr.Dataset) -> xr.Dataset:
         raise NotImplementedError
+
+    def execution_inputs(self, inputs: xr.Dataset) -> Iterable[xr.Dataset]:
+        """Native execution groups; by default one scalar parameter combination."""
+        shape = tuple(inputs.sizes.values())
+        each_input = xr.DataArray(
+            # See https://github.com/pydata/xarray/issues/7423 for the float dtype.
+            data=np.arange(np.prod(shape), dtype=float).reshape(shape),
+            coords=inputs.coords,
+        )
+        for _, one_input in groupby(dataset=inputs, groups=each_input):
+            yield one_input
+
+    def read_output(self, path: Path, inputs: xr.Dataset) -> xr.Dataset:
+        return xr.open_dataset(path)
+
+    def result_dataset(self, dataset: xr.Dataset) -> xr.Dataset:
+        """Form the scientific product before publishing the combined output."""
+        return dataset
 
     def prepare_inputs(self, dataset: xr.Dataset) -> xr.Dataset:
         """Prepare coordinates for native serialization and output metadata."""

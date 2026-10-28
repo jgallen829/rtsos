@@ -1,4 +1,4 @@
-# This is a data-selection example; custom integration needs the next native step.
+# Complete selected response integration for a Lambertian land scene.
 [sensor]
 name = "custom"
 response_file = "response.toml"
@@ -16,14 +16,21 @@ tau_ref_hi = 0.125
 [geometry]
 mode = "pace_grid"
 solar_zenith_deg = 20.0
+sensor_height_km = 2.0
+zenith_count = 2
+azimuth_count = 2
 
 [physics]
 scattering = "vector"
 
 [numerics]
+ncolinput = 8
+nquadainput = 12
+nquadoinput = 24
+MAXMORDINPUT = 3
 
 [illumination]
-source = "pace_native"
+source = "thuillier"
 
 [spectral]
 method = "response_integration"

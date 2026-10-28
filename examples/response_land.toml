@@ -1,0 +1,57 @@
+[sensor]
+name = "custom"
+response_file = "response.toml"
+response_format = "toml"
+channels = ["red", "blue"]
+
+[scene.atmosphere]
+profile = "afglus.dat"
+OZONE_COLUMN_DobsonUnit = 350.0 # DU
+H2O_COLUMN = 1.5               # cm
+NO2_COLUMN_DobsonUnit = 0.25   # DU
+Pressure_Surface_mb = 1000.0  # mb
+
+# One selected aerosol/solar state, independent of the legacy ocean sweep.
+[scene.aerosol]
+Aerosol_Model = -1
+Aerosol_FMF = 0.5
+Relative_Humidity = 0.5
+wv_pace_ref = 532.0 # nm
+tau_ref_hi = 0.125
+height_particle_hi = 15.0          # km
+height_particle_variance_hi = 2.0 # Gaussian FWHM in km (native variable name)
+tau_ref_low = 0.0
+height_particle_low = -1.0
+height_particle_variance_low = -1.0
+
+[scene.surface]
+model = "lambertian_fresnel"
+spectrum = "land_spectrum.txt" # fraction_lambertian = 1 gives pure Lambertian
+
+[geometry]
+mode = "pace_grid"
+solar_zenith_deg = 20.0
+sensor_height_km = 2.0
+zenith_count = 2
+azimuth_count = 2
+
+[physics]
+scattering = "vector"
+spherical_shell = false
+atmosphere = true
+gas_absorption = true
+
+[numerics]
+ncolinput = 8
+nquadainput = 12
+nquadoinput = 24
+MAXMORDINPUT = 3
+
+[illumination]
+source = "thuillier"
+
+[spectral]
+method = "response_integration"
+
+[data]
+root = "../RTSOS_data"

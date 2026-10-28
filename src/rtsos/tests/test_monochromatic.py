@@ -32,8 +32,8 @@ def test_request_records_units_precision_and_order(tmp_path):
     for i in range(3):
         infile, _ = program.infile(tmp_path, inputs.isel(request=i))
         rows = (tmp_path / infile).read_text().splitlines()
-        assert float(rows[-2]) == case.spectral["wavelengths"][i] * 1000
-        assert rows[-1] == "thuillier"
+        assert float(rows[-1]) == case.spectral["wavelengths"][i] * 1000
+        assert rows[-3:-1] == ["thuillier", "1"]
         assert float(rows[15].split("#")[0]) == case.scene["water"]["chla"]
 
 
@@ -49,18 +49,23 @@ def test_python_cli_real_program_route(tmp_path, monkeypatch):
     def native(args, check):
         assert args[0] == "rtsos_Monochromatic" and check
         rows = Path(args[1]).read_text().splitlines()
-        wave = float(rows[-2])
-        records.append(rows[:-3] + rows[-2:])
+        policy = rows.index("thuillier")
+        waves = np.array([float(w) for w in rows[policy + 2 :]])
+        assert int(rows[policy + 1]) == 2  # Exact A/B/A reuse in one process.
+        records.append(rows[: policy - 1] + rows[policy:])
         xr.Dataset(
             {
-                "Wavelength_Evaluated": np.float64(wave),
+                "Wavelength_Evaluated": ("evaluation", waves),
                 "Stokes_Vector_TOA": (
-                    "N_Stokes_Parameter",
-                    np.array([wave, -0.02, 0.0, -0.0], np.float64),
+                    ("evaluation", "N_Stokes_Parameter"),
+                    np.array([[w, -0.02, 0.0, -0.0] for w in waves], np.float64),
                 ),
             },
-            coords={"N_Stokes_Parameter": [1, 2, 3, 4]},
-        ).to_netcdf(rows[-3] + ".h5")
+            coords={
+                "evaluation": np.arange(len(waves)),
+                "N_Stokes_Parameter": [1, 2, 3, 4],
+            },
+        ).to_netcdf(rows[policy - 1] + ".h5")
 
     monkeypatch.setattr(subprocess, "run", native)
     result = simulate(case, tmp_path / "python.nc", tmp=tmp_path)
@@ -84,7 +89,7 @@ def test_python_cli_real_program_route(tmp_path, monkeypatch):
     assert result.Stokes_Vector_TOA.dtype == np.dtype("float64")
     assert np.signbit(result.Stokes_Vector_TOA.sel(N_Stokes_Parameter=4)).all()
     assert result.tau_ref_hi.item() == 0
-    assert records[:3] == records[3:]
+    assert len(records) == 2 and records[0] == records[1]
 
 
 @pytest.mark.parametrize(

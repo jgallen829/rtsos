@@ -179,18 +179,28 @@ def test_custom_selection_is_separate_from_execution():
         case_inputs(case)
 
 
-def test_cli_reports_missing_operation(tmp_path, capsys):
+def test_cli_reports_missing_response_case_data(tmp_path, capsys):
+    path = tmp_path / "case.toml"
+    path.write_text(
+        (EXAMPLES / "custom_response.toml")
+        .read_text()
+        .replace('root = "../RTSOS_data"', 'root = "missing"')
+        .replace(
+            'response_file = "response.toml"',
+            f'response_file = "{EXAMPLES / "response.toml"}"',
+        )
+    )
     with pytest.raises(SystemExit) as error:
         main(
             [
                 "simulate",
-                str(EXAMPLES / "custom_response.toml"),
+                str(path),
                 str(tmp_path / "out.nc"),
             ]
         )
     assert error.value.code == 2
-    assert "custom response integration" in capsys.readouterr().err
-    assert not list(tmp_path.iterdir())
+    assert "f0.txt" in capsys.readouterr().err
+    assert not (tmp_path / "out.nc").exists()
 
 
 @pytest.mark.parametrize(

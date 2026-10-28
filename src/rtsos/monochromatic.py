@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import numpy as np
+import xarray as xr
 from .core import expect_exe
 from .parameters import Parameters as P
 from .PACE_Simulator_DoubleK import PACE, init
@@ -153,7 +154,7 @@ def check_data(case, inputs, solar):
 
 
 class Monochromatic(PACE):
-    """One isolated native process per wavelength, using Program's existing loop."""
+    """One isolated native process per scene's wavelength set, through Program."""
 
     def __init__(self):
         pace = init()
@@ -164,14 +165,26 @@ class Monochromatic(PACE):
 
     def infile(self, path, dataset):
         infile, outfile = super().infile(path, dataset)
+        wavelengths, _ = _evaluation_grid(dataset)
         with (path / infile).open("a") as stream:
-            stream.write(
-                f"{dataset.wavelength_nm.item():.17g}\n{dataset.attrs['solar_policy']}\n"
-            )
+            stream.write(f"{dataset.attrs['solar_policy']}\n{len(wavelengths)}\n")
+            stream.writelines(f"{wave:.17g}\n" for wave in wavelengths)
         return infile, outfile
 
+    def execution_inputs(self, inputs):
+        yield inputs
+
+    def read_output(self, path, inputs):
+        _, inverse = _evaluation_grid(inputs)
+        result = xr.load_dataset(path)
+        return (
+            result.isel(evaluation=xr.DataArray(inverse, dims="request"))
+            .assign_coords(request=inputs.request)
+            .drop_vars("evaluation")
+        )
+
     def result_inputs(self, inputs, outputs):
-        if outputs.Wavelength_Evaluated.item() != inputs.wavelength_nm.item():
+        if not np.array_equal(outputs.Wavelength_Evaluated, inputs.wavelength_nm):
             raise ValueError(
                 "Native evaluated wavelength differs from the requested wavelength"
             )
@@ -179,3 +192,11 @@ class Monochromatic(PACE):
         return inputs.drop_vars(
             ["MONOCHROMATIC_FLAG", "hyspectral_flag", "WAVEBAND_SEG_FLAG"]
         )
+
+
+def _evaluation_grid(inputs):
+    """Stable exact-value reuse; request identities remain independent of sorting."""
+    waves = inputs.wavelength_nm.values.reshape(-1)
+    unique, first, inverse = np.unique(waves, return_index=True, return_inverse=True)
+    order = np.argsort(first)
+    return unique[order], np.argsort(order)[inverse]
