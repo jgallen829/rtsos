@@ -1,0 +1,32 @@
+# This is a data-selection example; custom integration needs the next native step.
+[sensor]
+name = "custom"
+response_file = "response.toml"
+response_format = "toml"
+channels = ["red", "blue"]
+mirror = 0
+
+[scene.surface]
+model = "lambertian_fresnel"
+spectrum = "land_spectrum.txt"
+
+[scene.aerosol]
+tau_ref_hi = 0.125
+
+[geometry]
+mode = "pace_grid"
+solar_zenith_deg = 20.0
+
+[physics]
+scattering = "vector"
+
+[numerics]
+
+[illumination]
+source = "pace_native"
+
+[spectral]
+method = "response_integration"
+
+[data]
+root = "../RTSOS_data"

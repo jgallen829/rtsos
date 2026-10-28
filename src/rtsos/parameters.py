@@ -637,7 +637,7 @@ class Parameters:
         metadata={
             "long_name": "power spectral slope of backscattering fraction",
             "comment": "used when ocean_case_select == 3",
-            "units": "1/nm",
+            "units": "1",
             "valid_range": np.array((-0.2, 0.2), dtype=np.float32),
             "dtype": np.float32,
         },
@@ -647,7 +647,7 @@ class Parameters:
         metadata={
             "long_name": "power spectral slope of backscattering coefficient",
             "comment": "used when ocean_case_select == 3",
-            "units": "1/nm",
+            "units": "1",
             "valid_range": np.array((0, 0.5), dtype=np.float32),
             "dtype": np.float32,
         },

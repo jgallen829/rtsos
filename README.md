@@ -477,6 +477,34 @@ body), retain them. The land-spectrum record is written only for negative cases.
 Ocean coordinates retained in a land dataset do not affect its native input;
 select their sweep dimensions explicitly if they would otherwise repeat land work.
 
+### 2.1C Readable physical cases
+
+One-state examples are provided in [examples/pace_ocean.toml](examples/pace_ocean.toml)
+and [examples/pace_land.toml](examples/pace_land.toml). Set their `[data]` locations
+to your auxiliary data, then use the shared simulation route:
+
+```shell
+$ rtsos simulate examples/pace_ocean.toml ocean.nc
+$ rtsos simulate examples/pace_land.toml land.nc
+$ rtsos simulate --dry-run examples/pace_ocean.toml ocean.nc
+```
+
+The same case runs from Python:
+
+```python
+from rtsos import load_case, simulate
+
+case = load_case("examples/pace_ocean.toml")
+result = simulate(case, "ocean.nc")
+```
+
+Case-file paths resolve relative to the case file's directory. Output and `--tmp`
+paths resolve relative to the invocation directory. Legacy commands retain their
+existing path behavior, 20-state template, native processing and output variables.
+New cases choose named surface and water models and supply their active sweep
+quantities explicitly. See [the case and response guide](examples/README.md) for
+the model choices, units, geometry, exact-response loading and native capabilities.
+
 ### Python tests
 
 From the repository root in an environment with the Python dependencies and pytest

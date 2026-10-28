@@ -1,0 +1,69 @@
+# One state: the sweep selections are explicit (20 deg, tau=0.125, chla=0.5).
+[sensor]
+name = "pace"
+channels = "harp2"
+
+[scene.atmosphere]
+profile = "afglus.dat"
+OZONE_COLUMN_DobsonUnit = 350.0 # DU
+H2O_COLUMN = 1.5               # cm
+NO2_COLUMN_DobsonUnit = 0.25   # DU
+Pressure_Surface_mb = 1000.0  # mb
+
+[scene.aerosol]
+Aerosol_Model = -1 # Native flexible Ahmad model
+Aerosol_FMF = 0.5
+Relative_Humidity = 0.5 # fraction
+wv_pace_ref = 532.0     # nm
+tau_ref_hi = 0.125
+height_particle_hi = 15.0          # km
+height_particle_variance_hi = 2.0 # Gaussian FWHM in km (native variable name)
+tau_ref_low = 0.0
+height_particle_low = -1.0          # native one-layer sentinel
+height_particle_variance_low = -1.0
+
+[scene.surface]
+model = "ocean"
+wind_speed_m_s = 5.0
+
+[scene.water]
+model = "chlorophyll"
+chla = 0.5 # mg/m^3
+water_depth_max = 200.0 # m
+CHLA_HOMOGENEITY = 1
+absorption_model = "bricaud"
+
+[geometry]
+mode = "pace_grid"
+solar_zenith_deg = 20.0
+sensor_height_km = 2.0
+zenith_count = 2
+azimuth_count = 2
+
+[physics]
+scattering = "vector"
+spherical_shell = false
+atmosphere = true
+gas_absorption = true
+sun_glint = true
+raman = true
+chlorophyll_fluorescence = true
+cdom_fluorescence = true
+nonphotochemical_quenching = false
+single_water_phase_matrix = true
+
+# Small operating settings, freely adjustable; these do not establish convergence.
+[numerics]
+ncolinput = 8
+nquadainput = 12
+nquadoinput = 24
+MAXMORDINPUT = 3
+
+[illumination]
+source = "pace_native" # native TSIS preference, with Thuillier fallback
+
+[spectral]
+method = "pace_native" # retained PACE response and double-k processing
+
+[data]
+root = "../RTSOS_data" # directory containing Data and Gas_Absorption_Coefficients

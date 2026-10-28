@@ -1,0 +1,27 @@
+# Illustrative supplied samples, including a signed tail and distinct mirrors.
+[[channels]]
+id = "blue"
+nominal_label = "blue 440"
+detector = "a"
+mirror = 0
+wavelength_unit = "nm"
+wavelength = [390.0, 430.0, 440.1, 450.0, 510.0]
+response = [0.0, -0.001, 1.0, 0.3, 0.0]
+
+[[channels]]
+id = "blue"
+nominal_label = "blue 440"
+detector = "a"
+mirror = 1
+wavelength_unit = "nm"
+wavelength = [389.0, 431.0, 440.2, 451.0, 511.0]
+response = [0.0, -0.002, 0.9, 0.4, 0.0]
+
+[[channels]]
+id = "red"
+nominal_label = "red 665"
+detector = "b"
+mirror = 0
+wavelength_unit = "um"
+wavelength = [0.6, 0.664, 0.7]
+response = [0.0, 0.8, 0.0]

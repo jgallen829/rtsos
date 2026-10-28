@@ -94,9 +94,37 @@ subparsers.add_parser(
     ),
 )
 
+simulate_parser = subparsers.add_parser(
+    "simulate",
+    description="Simulate one readable physical case with the native PACE adapter.",
+)
+simulate_parser.add_argument(
+    "case", type=Path, help="TOML case file; data paths are relative to its directory"
+)
+simulate_parser.add_argument("outputs", type=Path, help="output NetCDF path")
+simulate_parser.add_argument(
+    "--tmp",
+    type=Path,
+    default=Path(gettempdir()),
+    help="parent directory for native temporary files",
+)
+simulate_parser.add_argument(
+    "--dry-run",
+    action="store_true",
+    help="write native input records without execution",
+)
+
 
 def main(argv: str | None = None) -> None:
     args = parser.parse_args(argv)
+    if args.program == "simulate":
+        from .simulation import simulate
+
+        try:
+            simulate(args.case, args.outputs, tmp=args.tmp, dry_run=args.dry_run)
+        except (ValueError, NotImplementedError, FileNotFoundError) as error:
+            simulate_parser.error(str(error))
+        return
     module = import_module(f"{__package__}.{args.program}")
     program = (
         module.init(data_root=args.data_root)

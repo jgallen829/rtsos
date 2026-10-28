@@ -15,7 +15,7 @@ from rtsos.core import groupby, reduce_by_coords, split_list_arg
 PROGRAMS = ("GSFC_AC_LUT", "PACE_Simulator_DoubleK", "Aerosol_Phmx_Cal")
 
 
-@pytest.mark.parametrize("program", [None, *PROGRAMS])
+@pytest.mark.parametrize("program", [None, *PROGRAMS, "simulate"])
 def test_help(program, capsys):
     with pytest.raises(SystemExit) as exc:
         main(([program] if program else []) + ["--help"])
