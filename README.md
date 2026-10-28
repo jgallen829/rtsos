@@ -212,6 +212,18 @@ for the wavelength, model, data, illumination, units and numerical contracts.
 Full-response integration uses every supplied calibration node and shares scene
 preparation across the wavelength set. See [band simulation](examples/README.md#full-response-band-simulation)
 for the trapezoidal method, complete OCI selections and result schema.
+For paired observations at requested directions, including a single observation:
+
+```shell
+$ rtsos simulate examples/monochromatic_directions.toml directions.nc
+$ rtsos simulate examples/response_directions.toml direction_bands.nc
+$ rtsos simulate examples/single_direction.toml single.nc
+```
+
+Set the example data paths first. The same geometry table serves both spectral
+methods, retains order and repetitions, and returns an `observation` axis.
+See [ordered viewing directions](examples/README.md#ordered-viewing-directions)
+for the propagation-angle, relative-azimuth, detector and Stokes conventions.
 The existing low-level `rtsos_rao_dg` command remains available.
 
 ### 2.1A.1 PACE Simulator

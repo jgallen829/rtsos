@@ -24,6 +24,7 @@ USE RTUTILITY, ONLY : PI,FACTOR,NUMMIEANGMAX,PSEUDO_SPHERICAL_SHELL,&
                       SPHERICAL_SHELL_SINGLESCATTERING_CORRECTION
 USE Atmosphere_Profile
 USE MONOCHROMATIC_RESULT
+USE MONOCHROMATIC_GEOMETRY
 USE SnowBRDF
 IMPLICIT NONE
 
@@ -31,8 +32,9 @@ IMPLICIT NONE
 ! explicit solar source, wavelength count, and that many wavelengths in nm.
 INTEGER :: NTLYER,NTLYERA,NTLYERO,NREC,NCOLINPUT,NQUADAINPUT,NQUADOINPUT
 INTEGER :: MAXMORDINPUT_SAVE,NUMMIERT,MAXLORDINPUT,MAXMORDINPUT,DELTAM_INPUT
-INTEGER :: NTHETAOUT,NPHIOUT,IAEROSOL,INTTMP,nopt
+INTEGER :: NTHETAOUT,NPHIOUT,IAEROSOL,INTTMP,nopt,iobs
 INTEGER,ALLOCATABLE :: ARSL_TYPE(:),NUMMIEANGINPUT(:)
+INTEGER,ALLOCATABLE :: observation_theta(:),observation_phi(:)
 DOUBLE PRECISION :: LBDO_LD,FLAM,CHLa,pBRDFa_input,pBRDFk_input,pBRDFb_input,pBRDFe_input
 DOUBLE PRECISION :: MU_IN,WAVELENGTH_MICRON,TEMPERTURE,SALINITY,RH_simu,AeroFMF
 DOUBLE PRECISION :: requested_nm,esun_value,scale_value,prep_wave(3)
@@ -232,6 +234,7 @@ DO iwave=1,nwave
  READ(1,*)wavelengths(iwave)
 ENDDO
 requested_nm=wavelengths(1)
+CALL read_geometry(1,NTHETAOUT,NPHIOUT,MUOUT,PHIOUT,observation_theta,observation_phi)
 CLOSE(1)
 
 IF(index(aux_dir,'#')>1) &
@@ -392,8 +395,6 @@ IF(ANY(wavelengths/1000.0D0<WVSUN(1)) .OR. ANY(wavelengths/1000.0D0>WVSUN(NSUNL)
 DO iwave=1,nwave
  CALL FSUNCAL(wavelengths(iwave)/1000.0D0,esun(iwave))
 ENDDO
-ALLOCATE(MUOUT(NTHETAOUT),PHIOUT(NPHIOUT))
-CALL MUPHIOUTASS(NTHETAOUT,NPHIOUT,MUOUT,PHIOUT)
 MAXLORDINPUT=MAX(NQUADAINPUT,MAXMORDINPUT_SAVE)
 MAXMORDINPUT=MAXMORDINPUT_SAVE
 IF(MAXLORDINPUT>3000) ERROR STOP 'Phase expansion exceeds core MAXLFULL=3000'
@@ -439,7 +440,12 @@ IF(OCEAN_CASE_SELECT>=0)THEN
  CALL WATER_ABSORPTION_MCF_READ
  CALL WATER_ABSORPTION_IOCCG_READ
 ENDIF
-ALLOCATE(irrad_all(NDET,2,nwave),stokes_all(NDET,NTHETAOUT,NPHIOUT,4,nwave))
+ALLOCATE(irrad_all(NDET,2,nwave))
+IF(SIZE(observation_theta)>0)THEN
+ ALLOCATE(stokes_all(NDET,SIZE(observation_theta),1,4,nwave))
+ELSE
+ ALLOCATE(stokes_all(NDET,NTHETAOUT,NPHIOUT,4,nwave))
+ENDIF
 ALLOCATE(taur_all(NTLYERA,nwave),gas_all(NTLYERA,nwave),ext_all(NTLYERA,nwave),scat_all(NTLYERA,nwave))
 CALL CPU_TIME(prepared_time)
 WRITE(*,*) 'Shared scene preparation count: 1; wavelengths: ',nwave
@@ -475,7 +481,13 @@ IF(ABSORPTION_TAU_REDUCE_FLAG)THEN
  DSTOKES(2:NDET,:,:,:)=DSTOKES(2:NDET,:,:,:)*EXP(-TAU_REDUCE_ATMOS_PRESERVE(NTLYERA+1))
 ENDIF
  irrad_all(:,:,iwave)=DIRAD
- stokes_all(:,:,:,:,iwave)=DSTOKES
+ IF(SIZE(observation_theta)>0)THEN
+  DO iobs=1,SIZE(observation_theta)
+   stokes_all(:,iobs,1,:,iwave)=DSTOKES(:,observation_theta(iobs),observation_phi(iobs),:)
+  ENDDO
+ ELSE
+  stokes_all(:,:,:,:,iwave)=DSTOKES
+ ENDIF
  taur_all(:,iwave)=TAUR
  gas_all(:,iwave)=TAU_TG
  ext_all(:,iwave)=TAU_ARSL_Ext_TMP
@@ -485,7 +497,8 @@ CALL CPU_TIME(finish_time)
 WRITE(*,*) 'Scene preparation CPU seconds: ',prepared_time-start_time
 WRITE(*,*) 'Wavelength evaluation CPU seconds: ',finish_time-prepared_time
 CALL write_result(OUTFILE,nwave,wavelengths,esun,MAXMORDINPUT,MAXLORDINPUT, &
- NDET,NTHETAOUT,NPHIOUT,NTLYERA,MUOUT,PHIOUT,taur_all,gas_all,ext_all,scat_all,irrad_all,stokes_all)
+ NDET,NTHETAOUT,NPHIOUT,NTLYERA,MUOUT,PHIOUT,taur_all,gas_all,ext_all,scat_all,irrad_all,stokes_all, &
+ observation_theta,observation_phi)
 CONTAINS
 SUBROUTINE prepare_particles(last_slot)
  INTEGER,INTENT(IN) :: last_slot

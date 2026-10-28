@@ -43,6 +43,7 @@ add_executable(rtsos_PACE_Simulator_DoubleK
     pace_simulator/main_PACE_Simulator_DoubleK.f90
 )
 add_executable(rtsos_Monochromatic
+    monochromatic/geometry.f90
     monochromatic/result.f90
     monochromatic/main.f90
 )

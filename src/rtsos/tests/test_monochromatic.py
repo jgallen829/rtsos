@@ -214,7 +214,8 @@ def test_native_analytical_surface(surface, tmp_path):
 
 
 @pytest.mark.native
-def test_native_absorbing_atmosphere_restores_attenuation(tmp_path):
+@pytest.mark.parametrize("mode", ["pace_grid", "explicit_directions"])
+def test_native_absorbing_atmosphere_restores_attenuation(tmp_path, mode):
     """A black surface cannot receive more than E0*mu0*exp(-vertical gas tau).
 
     Every downward photon traverses at least the vertical absorber column. This
@@ -230,6 +231,14 @@ def test_native_absorbing_atmosphere_restores_attenuation(tmp_path):
     spectrum.write_text("black\n2\n300 0 1 0 0 1.5 0\n2500 0 1 0 0 1.5 0\n")
     case.scene["surface"]["spectrum"] = str(spectrum)
     case.spectral.update(wavelength_unit="nm", wavelengths=[1400.0])
+    if mode == "explicit_directions":
+        case.geometry = dict(
+            mode=mode,
+            solar_zenith_deg=20.0,
+            sensor_height_km=2.0,
+            viewing_zenith_deg=[37.25, 0, 145, 37.25],
+            relative_azimuth_deg=[315, 0, 120, -45],
+        )
     result = simulate(case, tmp_path / "absorbing.nc", tmp=tmp_path)
     gas_tau = result.Tau_Gas_Absorption.sum("Atmosphere_Layer")
     assert (gas_tau > 10).all()  # Exercise the native absorption-reduction branch.

@@ -28,7 +28,7 @@ Every case has eight plain TOML tables (including empty tables when needed):
 | --- | --- |
 | `sensor` | Sensor identity, channel selection, response source and calibration variants. |
 | `scene` | `atmosphere`, `aerosol`, `surface`, and ocean `water` properties. |
-| `geometry` | Solar direction, detector altitude, viewing grid or future explicit directions. |
+| `geometry` | Solar direction, detector altitude, generated grid or ordered paired directions. |
 | `physics` | Scattering treatment, spherical approximation and process choices. |
 | `numerics` | Numerical resolution and expansion settings. |
 | `illumination` | Solar reference policy. |
@@ -272,9 +272,9 @@ enabled. Requests for them fail before starting the native executable; omitted
 water-body process settings retain the existing defaults and consequently also
 require an explicit choice. External aerosol/cloud phase-matrix files still use
 PACE-segment layouts and need a requested-wavelength matrix loader. Built-in
-`Aerosol_Model=-1` or 1–20 are connected. Vector RT and the reviewed `pace_grid`
-viewing-count behavior are supported. Explicit direction lists, scalar RT,
-and custom illumination retain their explicit capability boundaries.
+`Aerosol_Model=-1` or 1–20 are connected. Vector RT supports the reviewed
+`pace_grid` viewing counts and `explicit_directions` below. Scalar RT and custom
+illumination retain their explicit capability boundaries.
 
 Select `illumination.source = "tsis"` or `"thuillier"` explicitly. Native code
 reads exactly that source, independent of sensor identity or availability of the
@@ -346,6 +346,116 @@ zeros and native calibration precision independently of the selected spectral
 calculation method. Full-response integration is described below.
 
 
+## Ordered viewing directions
+
+`monochromatic_directions.toml`, `response_directions.toml` and
+`single_direction.toml` use the same land scene, explicit solar source and
+physical settings. After setting their data paths, run from this directory:
+
+```sh
+rtsos simulate monochromatic_directions.toml directions.nc
+rtsos simulate response_directions.toml direction_bands.nc
+rtsos simulate single_direction.toml single.nc
+```
+
+The first two examples use this plain geometry table:
+
+```toml
+[geometry]
+mode = "explicit_directions"
+solar_zenith_deg = 20.0
+sensor_height_km = 2.0
+viewing_zenith_deg = [37.25, 0.0, 145.0, 37.25, 30.0]
+relative_azimuth_deg = [315.0, 0.0, 120.0, -45.0, 63.0]
+```
+
+Corresponding positions form one observation. The order is retained, including
+the physically repeated first/fourth direction. Lists must be nonempty, finite,
+unmasked and equally long; `[37.25]` and `[315.0]` are an ordinary single
+observation. `zenith_count`/`azimuth_count` belong only to `pace_grid`.
+There is one solar direction and one sensor height per physical case; choosing
+a sensor or response changes neither. The same propagation directions are
+evaluated at TOA, AirSensor, BOA and, for ocean, TOO. These positions retain the
+native detector and medium definitions, not a new ray-tracing camera model.
+
+The public boundary uses **degrees**. `solar_zenith_deg` is the angle from the
+upward normal toward the sun, in [0,90); native solar propagation has
+`mu_solar = -cos(solar_zenith_deg)` and azimuth zero. `viewing_zenith_deg` is the
+**radiation propagation** zenith from the upward normal: 0 is upward, 180 is
+downward, [0,90) is the upward hemisphere and (90,180] is downward. A detector's
+look direction points opposite this propagation vector. `relative_azimuth_deg`
+is the propagation azimuth relative to solar propagation, increasing from +x
+toward +y in the solver's right-handed coordinates. The horizontal direction
+toward the sun has azimuth 180 in this system. Convert a source/look-direction
+convention before supplying these values. In the optional native spherical-shell
+approximation, the existing TOA ground-referenced angle convention
+(`IPSS_VIEWANGLE_GROUND=0`) is retained.
+
+Finite azimuths are reduced modulo 360 before conversion to native radians;
+−45 and 315 evaluate the same direction. Azimuths are never folded to 0–180.
+The original numbers remain in `viewing_zenith_requested(observation)` and
+`relative_azimuth_requested(observation)`. `ThetaV(observation)` records native
+`acos(mu)` converted back to degrees; `PhiV(observation)` records evaluated
+native azimuth in degrees. Tiny roundoff in these evaluated coordinates is
+retained. At zenith/nadir, supplied azimuth still defines the limiting meridian
+reference for polarization.
+
+Stokes order is native I,Q,U,V in the propagation meridian plane. +Q is linear
+polarization along that plane versus perpendicular to it; +U uses
+`2 Re(E_theta E_phi*)` in the native spherical basis. Circular polarization
+keeps the native phase-matrix F34/F43 signs, without a handedness conversion.
+The native Fourier reconstruction uses cos(m*phi) for I/Q and sin(m*phi) for
+U/V. For these mirror-symmetric scenes and unpolarized illumination, reflecting
+phi to −phi preserves I/Q and reverses U/V. A black-bottom single-scattered
+Rayleigh case at solar zenith 20, propagation zenith 30 and phi +45 has positive
+U; phi −45 has negative U. No adapter sign changes are applied.
+
+Zenith 90 is an explicit capability error: native transport and direct-beam
+attenuation divide optical depth by mu, and an exact mu=0 limit is not connected.
+There is no horizon buffer, shifted angle or other viewing cutoff. Both poles
+are supported. Distinct representable cosines bypass the legacy native 1e-6
+merge tolerance; native double precision still determines angular resolution.
+There is no observation-list operating cap; native default-integer indices
+(int32 in this build) and available memory remain representation/resource limits.
+
+The solver currently consumes Cartesian axes. The adapter evaluates unique
+**requested** zeniths and azimuths in one RT solve per wavelength and gathers
+only the selected pairs into the product. This shares the multiple-scattering
+solution instead of repeating it for each observation. Angular workspace scales
+as unique zeniths times unique azimuths; stored Stokes spectra scale as
+observations times unique wavelengths. No legacy-grid nearest-angle lookup is
+used. Geometry axes are prepared once per process; wavelength-dependent
+refraction, phase functions and transport are recalculated by the native solver.
+The explicit path also fits mapped attenuation from each direction's own
+zeroth Fourier source. The legacy mapper's shared scratch fit can depend on the
+last zenith in a grid; its behavior is retained for `pace_grid`/PACE. Accordingly,
+mapped explicit and legacy-grid radiances can differ by that correction, while
+unmapped native grid comparisons isolate the coordinate connection exactly.
+
+`observation` is a zero-based identity even for repetitions and singletons.
+Monochromatic Stokes dimensions are `(request, observation, N_Stokes_Parameter)`;
+band Stokes are `(channel, observation, N_Stokes_Parameter)`, with node spectra
+on `(spectral_node, observation, N_Stokes_Parameter)`. Channel variants and exact
+calibrations retain the response contract below. Solar/scene irradiances have
+no observation axis, and optical depths remain layer/wavelength diagnostics.
+Units, double precision, solar scaling and atmospheric absorption restoration
+are shared with the generated-grid path.
+
+```python
+from rtsos import load_case, simulate
+
+case = load_case("monochromatic_directions.toml")
+result = simulate(case, "directions.nc")
+print(result[["ThetaV", "PhiV", "Stokes_Vector_TOA"]])
+case.geometry["viewing_zenith_deg"] = [37.25]
+case.geometry["relative_azimuth_deg"] = [315.0]
+single = simulate(case, "single.nc")
+```
+
+The legacy PACE double-k path supports only `pace_grid` and reports the missing
+explicit-direction capability before execution. Its commands, defaults, native
+record layouts, instrument processing and result schema are unchanged.
+
 ## Full-response band simulation
 
 `response_ocean.toml` and `response_land.toml` run the same physical scene at
@@ -378,7 +488,7 @@ The source representation and selection contracts above continue to apply.
 variant filters to keep all supplied variants. Requested ID order is retained,
 with source variant order inside each ID. No absent calibration is interpolated.
 Illumination must explicitly select `tsis` or `thuillier`. This route uses the
-same supported physical models/process checks and `pace_grid` geometry as the
+same supported physical models/process checks and geometry modes as the
 monochromatic route. Unsupported requested processes fail before execution.
 
 ### Integration and data contract

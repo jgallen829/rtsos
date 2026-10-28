@@ -160,8 +160,27 @@ def _monochromatic_metadata(result):
             variable.units = "W m-2 um-1"
         elif name == "Wavelength_Evaluated":
             variable.units = "nm"
-        elif name in ("ThetaV", "PhiV"):
+        elif name in (
+            "ThetaV",
+            "PhiV",
+            "viewing_zenith_requested",
+            "relative_azimuth_requested",
+        ):
             variable.units = "degree"
         elif name.startswith("Tau_"):
             variable.units = "1"
     result.variables["N_Stokes_Parameter"].stokes_labels = "I Q U V"
+    if "observation" in result.dimensions:
+        result.setncatts(
+            dict(
+                geometry_mode="explicit_directions",
+                angle_convention="Degrees; propagation zenith from upward normal (0 upward, 180 downward); solar propagation azimuth=0; PhiV evaluated modulo 360, no 0..180 folding",
+                geometry_scope="One solar_zenith_deg (sun position) and sensor_height_km per physical case; ordered pairs at all detector levels",
+            )
+        )
+        result.variables["ThetaV"].long_name = (
+            "Native evaluated propagation zenith acos(mu)"
+        )
+        result.variables["PhiV"].long_name = (
+            "Native evaluated propagation azimuth relative to solar propagation plane"
+        )

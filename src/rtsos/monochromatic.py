@@ -81,6 +81,8 @@ def case_inputs(case):
         requested_wavelength_unit=unit,
     )
     wavelengths = wavelengths.astype(np.float64)
+    if case.geometry["mode"] == "explicit_directions":
+        inputs = _direction_inputs(case.geometry, inputs)
     return inputs.assign_coords(
         request=("request", np.arange(wavelengths.size, dtype=np.int64)),
         wavelength_requested=("request", wavelengths, {"units": unit}),
@@ -89,6 +91,44 @@ def case_inputs(case):
             wavelengths * (1000 if unit == "um" else 1),
             {"units": "nm"},
         ),
+    )
+
+
+def _direction_inputs(geometry, inputs):
+    """Paired propagation directions; one sun and detector height per scene."""
+    directions = []
+    for name in ("viewing_zenith_deg", "relative_azimuth_deg"):
+        if np.any(np.ma.getmaskarray(geometry[name])):
+            raise ValueError(f"geometry.{name} must be a nonempty finite numeric list")
+        values = np.asarray(geometry[name])
+        if (
+            values.ndim != 1
+            or not values.size
+            or values.dtype.kind not in "iuf"
+            or not np.all(np.isfinite(values))
+        ):
+            raise ValueError(f"geometry.{name} must be a nonempty finite numeric list")
+        directions.append(values.astype(np.float64))
+    theta, phi = directions
+    if theta.size != phi.size:
+        raise ValueError(
+            "viewing_zenith_deg and relative_azimuth_deg must have equal lengths (paired observations)"
+        )
+    if np.any((theta < 0) | (theta > 180)):
+        raise ValueError("viewing_zenith_deg must be in [0, 180]")
+    if np.any(theta == 90):
+        raise NotImplementedError(
+            "Exact horizon (viewing_zenith_deg=90) needs a mu=0 transport/direct-beam limit; "
+            "the native solver divides optical depth by mu"
+        )
+    if theta.size > np.iinfo(np.int32).max:
+        raise ValueError(
+            "Observation count exceeds the native int32 index representation"
+        )
+    return inputs.assign_coords(
+        observation=("observation", np.arange(theta.size, dtype=np.int64)),
+        viewing_zenith_requested=("observation", theta, {"units": "degree"}),
+        relative_azimuth_requested=("observation", phi, {"units": "degree"}),
     )
 
 
@@ -169,6 +209,11 @@ class Monochromatic(PACE):
         with (path / infile).open("a") as stream:
             stream.write(f"{dataset.attrs['solar_policy']}\n{len(wavelengths)}\n")
             stream.writelines(f"{wave:.17g}\n" for wave in wavelengths)
+            if "observation" in dataset:
+                theta = dataset.viewing_zenith_requested.values.reshape(-1)
+                phi = dataset.relative_azimuth_requested.values.reshape(-1)
+                stream.write(f"explicit_directions\n{theta.size}\n")
+                stream.writelines(f"{t:.17g} {p:.17g}\n" for t, p in zip(theta, phi))
         return infile, outfile
 
     def execution_inputs(self, inputs):
@@ -177,9 +222,13 @@ class Monochromatic(PACE):
     def read_output(self, path, inputs):
         _, inverse = _evaluation_grid(inputs)
         result = xr.load_dataset(path)
+        request = inputs.request
+        if "observation" in inputs:
+            result = result.set_coords(["ThetaV", "PhiV"])
+            request = ("request", inputs.request.values)
         return (
             result.isel(evaluation=xr.DataArray(inverse, dims="request"))
-            .assign_coords(request=inputs.request)
+            .assign_coords(request=request)
             .drop_vars("evaluation")
         )
 
@@ -189,9 +238,11 @@ class Monochromatic(PACE):
                 "Native evaluated wavelength differs from the requested wavelength"
             )
         # These fields exist only to bridge the established physical record layout.
-        return inputs.drop_vars(
-            ["MONOCHROMATIC_FLAG", "hyspectral_flag", "WAVEBAND_SEG_FLAG"]
-        )
+        omitted = ["MONOCHROMATIC_FLAG", "hyspectral_flag", "WAVEBAND_SEG_FLAG"]
+        if "observation" in inputs:
+            # The count records are placeholders for the legacy physical layout.
+            omitted += ["NTHETAV", "NPHIV"]
+        return inputs.drop_vars(omitted)
 
 
 def _evaluation_grid(inputs):

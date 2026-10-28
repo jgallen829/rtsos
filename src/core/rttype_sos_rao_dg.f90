@@ -163,6 +163,9 @@ LOGICAL :: NIGHTTIME_FLAG =.FALSE.  ! IF TRUE, NO SOLAR SOURCE IS NEEDED
 LOGICAL :: PSEUDO_SPHERICAL_SHELL = .FALSE.
 LOGICAL :: SPHERICAL_SHELL_SINGLESCATTERING_CORRECTION = .FALSE.
 LOGICAL :: RAD_MAP=.TRUE.,SNG_RAD_CORR=.TRUE.,SEC_RAD_CORR=.TRUE.
+! Set only by the requested-direction driver: retain distinct mu values and
+! use each mu's own transport fit. Legacy PACE retains its existing behavior.
+LOGICAL :: EXPLICIT_DIRECTIONS=.FALSE.
 !surface options
 LOGICAL :: SHDWFLG=.true. ! IF TRUE, USE SHADOWING FUNCTION
 						  ! SHOULD BE ALWAYS TRUE.

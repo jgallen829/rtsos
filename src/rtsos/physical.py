@@ -48,21 +48,30 @@ def _case_keys(table, allowed, section, required=()):
 
 def physical_case_inputs(case, *, channel_group=0, monochromatic=False):
     """Shared public scene/geometry/process translation with PACE scalar defaults."""
-    if case.geometry.get("mode") != "pace_grid":
+    geometry_mode = case.geometry.get("mode")
+    if geometry_mode == "explicit_directions" and not monochromatic:
         raise NotImplementedError(
-            "Explicit viewing directions need a native geometry input connection; PACE generates its viewing grid from counts"
+            "Explicit viewing directions require monochromatic or response_integration; "
+            "the legacy PACE double-k driver only generates pace_grid geometry"
         )
+    if geometry_mode not in ("pace_grid", "explicit_directions"):
+        raise ValueError("geometry.mode must be pace_grid or explicit_directions")
+    direction_fields = {"viewing_zenith_deg", "relative_azimuth_deg"}
     _case_keys(
         case.geometry,
         {
             "mode",
             "solar_zenith_deg",
             "sensor_height_km",
-            "zenith_count",
-            "azimuth_count",
-        },
+        }
+        | (
+            direction_fields
+            if geometry_mode == "explicit_directions"
+            else {"zenith_count", "azimuth_count"}
+        ),
         "geometry",
-        required={"solar_zenith_deg"},
+        required={"solar_zenith_deg"}
+        | (direction_fields if geometry_mode == "explicit_directions" else set()),
     )
     _case_keys(
         case.scene,
@@ -276,7 +285,7 @@ def physical_case_inputs(case, *, channel_group=0, monochromatic=False):
             "sensor_height_km would be reset by PACE; supply a nonzero height with magnitude below 100 km"
         )
     ntheta = values["NTHETAV"]
-    if ntheta != 1 and ntheta % 2:
+    if geometry_mode == "pace_grid" and ntheta != 1 and ntheta % 2:
         raise ValueError(
             "PACE zenith_count must be 1 or even; its odd-grid middle angle is uninitialized"
         )
