@@ -27,7 +27,7 @@ class PHMX(Program):
         super().__init__(*args, **kwargs)
 
     @Program.params.setter
-    def params(self, dataset: xr.DataArray) -> None:
+    def params(self, dataset: xr.Dataset) -> None:
         nmode = dataset[P.nmode.__name__].item()
         aerosol_model_number = dataset[P.Aerosol_Model.__name__]
         if aerosol_model_number > 0 and aerosol_model_number <= 20:
@@ -106,10 +106,10 @@ class PHMX(Program):
                     P.WAVEBAND_SEG_FLAG,
                     P.Aux_Dir,
                 )
-        self._params = (i.__name__ for i in _params)
+        self._params = tuple(i.__name__ for i in _params)
 
 
-def inti() -> PHMX:
+def init() -> PHMX:
     """Prepare subclass for execution defaults"""
 
     # values to write to the default input file

@@ -30,6 +30,9 @@ class ACLUT(Program):
         super().__init__(*args, **kwargs)
 
     def post(self, dataset: xr.Dataset) -> xr.Dataset:
+        # A later aggregation can join products already normalized by this method.
+        if "sza-dt" not in dataset.dims and "diffuse_transmittance" in dataset:
+            return dataset
         # replace am and sza-dt coordinates with model parameters
         # TODO drop unneeded coordinates range in FORTRAN
         dataset = dataset.sel({"ThetaV": slice(0, 90)})

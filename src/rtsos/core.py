@@ -15,7 +15,6 @@
 import subprocess
 from argparse import Namespace
 from collections.abc import Iterable
-from functools import reduce
 from pathlib import Path
 from platform import system
 from shutil import copy
@@ -69,40 +68,23 @@ def split_list_arg(arg: str) -> dict:
     return split
 
 
-def paths_by_coords(current: xr.DataArray, next: tuple[(str, slice)]) -> xr.DataArray:
-    """Create an array of Path objects with nesting subdirectories
-    for the given dimensions and ranges.
-    """
-    # use xr.DataArray for broadcasting by named dimensions
-    # TODO path construction, or maybe division, is oddly slow
-    dim = next[0]
-    start = next[1].start or 0
-    stop = next[1].stop or current[dim].size + start
-    idx = xr.DataArray(
-        [Path(str(i)) for i in range(start, stop)],  # TODO padding is unknown
-        dims=dim,
-    )
-    # note that Path objects represent concatenation by division
-    subdir = dim / idx
-    return current / subdir
-
-
 def reduce_by_coords(
     coords: dict,
     inputs: xr.Dataset,
     outdirs: Path,
 ) -> tuple[xr.Dataset, xr.DataArray]:
-    """A reduce operation that iterates over slices along xarray.DataArray.coords."""
-    try:
-        _inputs = inputs.isel(coords)
-    except KeyError as cause:
-        exception = Exception(
-            "`--split` and `--combine` value(s) must reference dimensions of inputs"
+    """Select inputs and build paths along split dimensions using original indices."""
+    selected = inputs.isel(coords)
+    paths = xr.DataArray(outdirs)
+    for dim, selection in coords.items():
+        positions = np.arange(inputs.sizes[dim])[selection]
+        subdirs = xr.DataArray(
+            [Path(dim) / str(i) for i in positions],
+            dims=dim,
+            coords={dim: selected[dim]} if dim in selected.coords else None,
         )
-        raise exception from cause
-    _outdirs, _ = xr.broadcast(xr.DataArray(outdirs), inputs)
-    _outdirs = reduce(paths_by_coords, coords.items(), _outdirs)
-    return _inputs, _outdirs
+        paths = paths / subdirs
+    return selected, paths
 
 
 class Program:
@@ -127,7 +109,6 @@ class Program:
                 return
         # read existing inputs
         inputs = xr.load_dataset(args.inputs)
-        self.params = inputs
         # begin construction of output path(s) relative to args.outputs.parent
         outdirs = xr.DataArray(Path())
         prefix = Path(args.outputs.stem)
@@ -141,15 +122,24 @@ class Program:
         if args.combine and not args.dry:
             coordinates = split_list_arg(args.combine)
             for key, value in groupby(dataset=inputs, groups=outdirs):
-                _, outdirs = reduce_by_coords(coordinates, value, key)
-                outdirs = np.unique(outdirs)
-                paths = args.outputs.parent / prefix / outdirs / args.outputs.name
-                dataset = xr.open_mfdataset(paths=paths.tolist(), data_vars="different")
-                try:
-                    dataset = self.post(dataset)
-                except NotImplementedError:
-                    pass
-                dataset.to_netcdf(args.outputs.parent / key / args.outputs.name)
+                _, combine_dirs = reduce_by_coords(coordinates, value, key)
+                paths = (
+                    args.outputs.parent
+                    / prefix
+                    / np.unique(combine_dirs)
+                    / args.outputs.name
+                )
+                with xr.open_mfdataset(
+                    paths=paths.tolist(),
+                    data_vars="different",
+                    compat="no_conflicts",
+                    join="outer",
+                ) as dataset:
+                    try:
+                        dataset = self.post(dataset)
+                    except NotImplementedError:
+                        pass
+                    dataset.to_netcdf(args.outputs.parent / key / args.outputs.name)
             return
         # execute the program in a temp directory then copy to outputs
         for key, value in groupby(dataset=inputs, groups=outdirs):
@@ -225,6 +215,7 @@ class Program:
 
     def infile(self, path: Path, dataset: xr.Dataset) -> tuple[Path, Path]:
         """Write parameters to a text file, and return its path."""
+        self.params = dataset
         lines = []
         for item in self.params:
             if item not in dataset:

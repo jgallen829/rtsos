@@ -1,8 +1,9 @@
+import pytest
 from pytest import fixture
 import numpy as np
 import xarray as xr
 
-from zhai_rt import rt_PACE
+from rtsos.__main__ import main
 
 
 @fixture(scope="module")
@@ -13,7 +14,7 @@ def cache_dir(pytestconfig):
 @fixture(scope="module")
 def tmp_default(cache_dir):
     path = cache_dir / "default.nc"
-    rt_PACE.main(["--pre", str(path)])
+    main(["PACE_Simulator_DoubleK", "--pre", str(path)])
     yield path
     path.unlink()
 
@@ -42,8 +43,9 @@ def cache_output(tmp_input):
     parent = path.parent / "output"
     if not any(parent.glob("chla/**/output.nc")):
         # run for only chla 0 and each tau_ref_hi
-        rt_PACE.main(
+        main(
             [
+                "PACE_Simulator_DoubleK",
                 "--split=chla:0,tau_ref_hi",
                 str(tmp_input),
                 str(path),
@@ -75,8 +77,9 @@ def tmp_input_with_phmx(tmp_input, phmx_cache_output):
 def cache_output_with_phmx(tmp_input_with_phmx):
     path = tmp_input_with_phmx.parent / "output-with-phmx.nc"
     if not path.exists():
-        rt_PACE.main(
+        main(
             [
+                "PACE_Simulator_DoubleK",
                 str(tmp_input_with_phmx),
                 str(path),
             ],
@@ -88,8 +91,9 @@ def cache_output_with_phmx(tmp_input_with_phmx):
 
 @fixture
 def tmp_combine(tmp_input, cache_output):
-    rt_PACE.main(
+    main(
         [
+            "PACE_Simulator_DoubleK",
             "--combine=chla:0,tau_ref_hi",
             str(tmp_input),
             str(cache_output),
@@ -108,8 +112,9 @@ def test_default(tmp_default):
 def test_infile(tmp_input):
     path = tmp_input.parent / "output.nc"
     # generate infiles for only chla 0 and each tau_ref_hi
-    rt_PACE.main(
+    main(
         [
+            "PACE_Simulator_DoubleK",
             "--dry-run",
             "--split=chla:0,tau_ref_hi",
             str(tmp_input),
@@ -122,6 +127,7 @@ def test_infile(tmp_input):
     assert len(infile) == 4
 
 
+@pytest.mark.native
 def test_output(cache_output):
     path = cache_output.parent / "output"
     output = tuple(path.glob("chla/0/**/output.nc"))
@@ -131,12 +137,14 @@ def test_output(cache_output):
         assert ds.sizes["tau_ref_hi"] == 1
 
 
+@pytest.mark.native
 def test_combine(tmp_combine):
     ds = xr.open_dataset(tmp_combine)
     assert ds.sizes["tau_ref_hi"] == 2
     assert ds.sizes["Solar_Zenith_Angle"] == 2
 
 
+@pytest.mark.native
 def test_output_with_phmx(cache_output_with_phmx):
     ds = xr.open_dataset(cache_output_with_phmx)
     assert ds.sizes["NUMMIEUSE"] == 2

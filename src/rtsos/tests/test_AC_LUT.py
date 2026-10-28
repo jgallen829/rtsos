@@ -1,8 +1,9 @@
+import pytest
 from pytest import fixture
 import xarray as xr
 
-from zhai_rt import rt_AC_LUT
-from zhai_rt.parameters import Parameters as P
+from rtsos.__main__ import main
+from rtsos.parameters import Parameters as P
 
 
 @fixture(scope="module")
@@ -13,7 +14,7 @@ def cache_dir(pytestconfig):
 @fixture(scope="module")
 def tmp_default(cache_dir):
     path = cache_dir / "default.nc"
-    rt_AC_LUT.main(["--pre", str(path)])
+    main(["GSFC_AC_LUT", "--pre", str(path)])
     yield path
     path.unlink()
 
@@ -41,8 +42,9 @@ def cache_output(tmp_input):
     parent = path.parent / "output"
     if not any(parent.glob("**/output.nc")):
         # run one AM, one RH, and every sza-dt
-        rt_AC_LUT.main(
+        main(
             [
+                "GSFC_AC_LUT",
                 "--split=Aerosol_Model:2,Relative_Humidity:4,sza-dt",
                 str(tmp_input),
                 str(path),
@@ -56,8 +58,9 @@ def cache_output(tmp_input):
 @fixture
 def tmp_split_combine(tmp_input, cache_output):
     # aggregate sza-dt only, not AM or RH
-    rt_AC_LUT.main(
+    main(
         [
+            "GSFC_AC_LUT",
             "--split=Aerosol_Model:2,Relative_Humidity:4",
             "--combine=sza-dt",
             str(tmp_input),
@@ -72,8 +75,9 @@ def tmp_split_combine(tmp_input, cache_output):
 
 @fixture
 def tmp_combine(tmp_input, cache_output):
-    rt_AC_LUT.main(
+    main(
         [
+            "GSFC_AC_LUT",
             "--combine=Aerosol_Model:2,Relative_Humidity:4,sza-dt",
             str(tmp_input),
             str(cache_output),
@@ -91,8 +95,9 @@ def test_default(tmp_default):
 def test_infile(tmp_input):
     path = tmp_input.parent / "output.nc"
     # generate infiles for one AM, one RH, and every sza-dt
-    rt_AC_LUT.main(
+    main(
         [
+            "GSFC_AC_LUT",
             "--dry-run",
             "--split=Aerosol_Model:2,Relative_Humidity:4,sza-dt",
             str(tmp_input),
@@ -105,6 +110,7 @@ def test_infile(tmp_input):
     assert len(infile) == 6
 
 
+@pytest.mark.native
 def test_output(cache_output):
     path = cache_output.parent / "output"
     output = tuple(path.glob("Aerosol_Model/*/Relative_Humidity/*/sza-dt/*/output.nc"))
@@ -114,6 +120,7 @@ def test_output(cache_output):
         assert dataset.sizes["Tau_NIR"] == 2
 
 
+@pytest.mark.native
 def test_split_combine(tmp_split_combine):
     path = tmp_split_combine.parent / "output"
     output = tuple(path.glob("Aerosol_Model/*/Relative_Humidity/*/output.nc"))
@@ -124,6 +131,7 @@ def test_split_combine(tmp_split_combine):
         assert dataset.sizes["Solar_Zenith_Angle"] == 2
 
 
+@pytest.mark.native
 def test_combine(tmp_combine):
     dataset = xr.open_dataset(tmp_combine)
     assert dataset.sizes["Tau_NIR"] == 2

@@ -46,8 +46,9 @@ cmake.args = ["-G", "Unix Makefiles"]
 [tool.setuptools_scm]
 write_to = "src/rtsos/_version.py"
 
-[tool.pytest]
+[tool.pytest.ini_options]
 cache_dir = "test/.pytest_cache"
+markers = ["native: integration tests requiring native executables and auxiliary data"]
 
 [build-system]
 requires = ["scikit-build-core>=0.11", "numpy>=2.1"]

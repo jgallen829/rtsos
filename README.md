@@ -313,7 +313,7 @@ provided in NetCDF files.  To run the PACE simulator with default values, call
 default parameters will be written and second, the path for outputs.
 
 ```shell
-$ rtsos PACE_Simulator_DoubleK intputs.nc outputs.nc
+$ rtsos PACE_Simulator_DoubleK inputs.nc outputs.nc
 ```
 
 To run the PACE simulator over non-default parameters, you must provide a suitable
@@ -338,17 +338,39 @@ NetCDF file.
     - To run subsets of the parameterizations as separate jobs, add the `--split`
       argument to indicate dimensions and indices over which to slice the inputs.
       ```shell
-      $ rtsos PACE_Simulator_DoubleK --split=RH:0,theta0:0-2 inputs.nc outputs.nc
-      $ rtsos PACE_Simulator_DoubleK --split=RH:0,theta0:2-4 inputs.nc outputs.nc
-      $ rtsos PACE_Simulator_DoubleK --split=RH:1,theta0:0-2 inputs.nc outputs.nc
-      $ rtsos PACE_Simulator_DoubleK --split=RH:1,theta0:2-4 inputs.nc outputs.nc
+      $ rtsos PACE_Simulator_DoubleK --split=chla:0-1,Solar_Zenith_Angle inputs.nc outputs.nc
+      $ rtsos PACE_Simulator_DoubleK --split=chla:2-4,Solar_Zenith_Angle inputs.nc outputs.nc
       ```
       Note that instead of writing to `outputs.nc`, a tree is written under `outputs/`
-      with results from each job. Once each jobs is complete, use the `--combine` argument
-      to combine existing outputs into a single file.
+      with results from each job. Indices are zero-based and ranges include both
+      endpoints. These two commands cover all five `chla` values and both
+      `Solar_Zenith_Angle` values in the default template, leaving `tau_ref_hi`
+      unsplit. For example, one product is
+      `outputs/chla/2/Solar_Zenith_Angle/0/outputs.nc`. Once both jobs are complete,
+      use the same dimension order with `--combine` to combine their outputs.
       ```shell
-      $ rtsos PACE_Simulator_DoubleK --combine=RH,theta0 intputs.nc outputs.nc
+      $ rtsos PACE_Simulator_DoubleK --combine=chla,Solar_Zenith_Angle inputs.nc outputs.nc
       ```
+      To aggregate only solar zenith angles while retaining separate `chla`
+      directories, use the following instead. Each result is written to
+      `outputs/chla/<index>/outputs.nc` and can then be combined across `chla`.
+      ```shell
+      $ rtsos PACE_Simulator_DoubleK --split=chla --combine=Solar_Zenith_Angle inputs.nc outputs.nc
+      $ rtsos PACE_Simulator_DoubleK --combine=chla inputs.nc outputs.nc
+      ```
+
+The default PACE template retains the legacy 20-state sweep: five `chla` values,
+two solar zenith angles, and two `tau_ref_hi` values. Add `--dry-run` to generate
+the native input files without running the simulator.
+
+### Python tests
+
+From the repository root in an environment with the Python dependencies and pytest
+installed, run the lightweight checks with
+`PYTHONPATH=src python -m pytest src/rtsos/tests`. These include template generation,
+dry runs, and synthetic native-output split/combine checks. Native integration
+tests are opt-in with `PYTHONPATH=src python -m pytest src/rtsos/tests --native` and require the
+installed executables and auxiliary data described above.
 
 ## References
 
