@@ -1,0 +1,341 @@
+{
+  "provenance": {
+    "public_preparation_revision": "9f1bcef2b0bc1d835c1a6a2c67eba6a2dae4d949",
+    "public_repository": "https://github.com/aoog-umbc/rtsos",
+    "source_repository": "https://github.com/jgallen829/rtsos",
+    "reference": "Original GLOBAL_DATA, MIE_PHMX_PACE and RTSOSINIT with retained original core; separately connected single-direction driver. Both native paths consume the same serialized physical inputs. The reference bypasses Python execution, paired-direction loading, instrument responses, band averaging and double-k.",
+    "optical_nodes_nm": [
+      551.25,
+      532.0,
+      665.0
+    ],
+    "evaluated_wavelength_nm": 551.25,
+    "aerosol_normalization_nm": 532.0,
+    "mineral_normalization_nm": 665.0,
+    "propagation_zenith_deg": 30.0,
+    "relative_azimuth_deg": 63.0,
+    "settings": {
+      "ncolinput": 8,
+      "nquadainput": 12,
+      "nquadoinput": 24,
+      "MAXMORDINPUT": 3
+    },
+    "physical_inputs": "test_native_models.model_case; SZA 20 degrees, except snow 60; elastic vector, plane parallel, atmosphere on, gases off, Thuillier.",
+    "units": {
+      "Stokes_Vector": "W m-2 sr-1 um-1",
+      "Irradiance": "W m-2 um-1",
+      "Solar_Irradiance": "W m-2 um-1",
+      "Tau": "dimensionless column sum"
+    },
+    "independence": "Shared physical equations and RTSOS solver. Establishes model/record/preparation/transport/scaling connection parity, not independent physical validation.",
+    "tolerance": "rtol=2e-12, atol=1e-13, reused from native grouped/single connection tests; float64 summation/angle roundoff only. Not an application accuracy target. All eight primary-direction comparisons were exactly zero; the additional snow mirror comparison differs only at angular roundoff.",
+    "angular_corrections": "Reference uses one direction, avoiding the legacy last-zenith attenuation scratch fit and near-duplicate mu merge; explicit production uses own m=0 fits and exact duplicate handling.",
+    "snow_source": "https://www.atmos.washington.edu/~sgwgroup/DC/brdfPaper.html",
+    "snow_archive_sha256": "4c93ab4e45c7de5cb04e2a7718c84a563b959ceb55441041d7b1f709a1e9a2e8",
+    "solar_file_sha256": "d63a7979ae4ce7402bb2ff303e13c8de2f3e5e1327079f1b1d4968507211518a",
+    "atmospheric_profile_sha256": "dab26290ed81c762ed0c607e5dc2d53393c1462a0c3a528bc5e3f5935191cfb5",
+    "snow_mirror_note": "The source EOF table is exactly mirror symmetric. interpl2d -> Func_UVIP3P uses three-node quadratic stencils chosen on the descending azimuth grid. The selected stencils at phi=63 and 297 are not reflected counterparts. Both original public-core single-angle outputs agree with the production paired outputs within float64 angular roundoff (negative phi versus modulo 360). Retained inherited interpolation behavior; no symmetry gate or scientific-method change."
+  },
+  "models": {
+    "none": {
+      "Solar_Irradiance": 1867.6961189407493,
+      "Tau_Rayleigh_Extinction": 0.0948936152496954,
+      "Tau_Gas_Absorption": 0.0,
+      "Tau_Aerosol_Extinction": 0.11768013887723969,
+      "Tau_Aerosol_Scattering": 0.11519327290016865,
+      "Irradiance_TOA_Downwelling": 1755.0602608391025,
+      "Irradiance_TOA_Upwelling": 148.3953065381457,
+      "Stokes_Vector_TOA": [
+        37.946598830534484,
+        -5.1111287166466,
+        6.354569432285166,
+        -0.0027494229317686926
+      ],
+      "Irradiance_AirSensor_Downwelling": 1666.8988158667514,
+      "Irradiance_AirSensor_Upwelling": 66.32374011535777,
+      "Stokes_Vector_AirSensor": [
+        18.49731899185427,
+        -2.9790271924860625,
+        2.995464589898939,
+        0.00037475362876171324
+      ],
+      "Irradiance_BOA_Downwelling": 1647.6467516268024,
+      "Irradiance_BOA_Upwelling": 47.0732257961922,
+      "Stokes_Vector_BOA": [
+        14.320470928570739,
+        -2.3806502143402715,
+        2.1310618962131387,
+        0.0004059615199940059
+      ],
+      "Irradiance_TOO_Downwelling": 1550.8935265483892,
+      "Irradiance_TOO_Upwelling": 0.0,
+      "Stokes_Vector_TOO": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "chlorophyll": {
+      "Solar_Irradiance": 1867.6961189407493,
+      "Tau_Rayleigh_Extinction": 0.0948936152496954,
+      "Tau_Gas_Absorption": 0.0,
+      "Tau_Aerosol_Extinction": 0.11768013887723969,
+      "Tau_Aerosol_Scattering": 0.11519327290016865,
+      "Irradiance_TOA_Downwelling": 1755.0602608391025,
+      "Irradiance_TOA_Upwelling": 156.49176272713444,
+      "Stokes_Vector_TOA": [
+        40.76611211850428,
+        -5.2629553171159085,
+        6.566954747659409,
+        -0.0019908373814419124
+      ],
+      "Irradiance_AirSensor_Downwelling": 1667.7766880239976,
+      "Irradiance_AirSensor_Upwelling": 75.36579910730795,
+      "Stokes_Vector_AirSensor": [
+        21.523592338356732,
+        -3.151277655285087,
+        3.228158902910416,
+        0.0007220313098816692
+      ],
+      "Irradiance_BOA_Downwelling": 1648.6706377358994,
+      "Irradiance_BOA_Upwelling": 56.26427306162835,
+      "Stokes_Vector_BOA": [
+        17.379314139899257,
+        -2.5559167013234068,
+        2.3669797653228457,
+        0.0007605462969800348
+      ],
+      "Irradiance_TOO_Downwelling": 1562.3212194395994,
+      "Irradiance_TOO_Upwelling": 20.25266549551783,
+      "Stokes_Vector_TOO": [
+        5.21087799928626,
+        -0.6470788381415882,
+        0.5499794037737119,
+        0.0009751711896340133
+      ]
+    },
+    "chlorophyll_sediment": {
+      "Solar_Irradiance": 1867.6961189407493,
+      "Tau_Rayleigh_Extinction": 0.0948936152496954,
+      "Tau_Gas_Absorption": 0.0,
+      "Tau_Aerosol_Extinction": 0.11768013887723969,
+      "Tau_Aerosol_Scattering": 0.11519327290016865,
+      "Irradiance_TOA_Downwelling": 1755.0602608391025,
+      "Irradiance_TOA_Upwelling": 154.7411508710564,
+      "Stokes_Vector_TOA": [
+        40.11024671022622,
+        -5.302485620948915,
+        6.614861964970928,
+        -0.003471965087955263
+      ],
+      "Irradiance_AirSensor_Downwelling": 1667.5830063690837,
+      "Irradiance_AirSensor_Upwelling": 73.39801421735734,
+      "Stokes_Vector_AirSensor": [
+        20.811887382489445,
+        -3.1965641059977554,
+        3.2850109983090854,
+        -0.0009997873091678517
+      ],
+      "Irradiance_BOA_Downwelling": 1648.4447051851046,
+      "Irradiance_BOA_Upwelling": 54.262579060194575,
+      "Stokes_Vector_BOA": [
+        16.65912318782216,
+        -2.6019541862450892,
+        2.425074295119144,
+        -0.000996274072052495
+      ],
+      "Irradiance_TOO_Downwelling": 1559.4347700126639,
+      "Irradiance_TOO_Upwelling": 15.430472074222836,
+      "Stokes_Vector_TOO": [
+        4.118861990858092,
+        -0.7319486135595659,
+        0.6290884347354854,
+        -0.0026433459954538123
+      ]
+    },
+    "seven_parameter": {
+      "Solar_Irradiance": 1867.6961189407493,
+      "Tau_Rayleigh_Extinction": 0.0948936152496954,
+      "Tau_Gas_Absorption": 0.0,
+      "Tau_Aerosol_Extinction": 0.11768013887723969,
+      "Tau_Aerosol_Scattering": 0.11519327290016865,
+      "Irradiance_TOA_Downwelling": 1755.0602608391025,
+      "Irradiance_TOA_Upwelling": 161.95250908543207,
+      "Stokes_Vector_TOA": [
+        42.65037455456341,
+        -5.355309375084569,
+        6.698509662600581,
+        -0.001205226674332172
+      ],
+      "Irradiance_AirSensor_Downwelling": 1668.3518061737825,
+      "Irradiance_AirSensor_Upwelling": 81.53499696473524,
+      "Stokes_Vector_AirSensor": [
+        23.54026245488877,
+        -3.2568085589123212,
+        3.3726922158586787,
+        0.0012832145987963142
+      ],
+      "Irradiance_BOA_Downwelling": 1649.3429213575912,
+      "Irradiance_BOA_Upwelling": 62.54341378638231,
+      "Stokes_Vector_BOA": [
+        19.416934693918147,
+        -2.6634490038478766,
+        2.5136157209032284,
+        0.0013312915764602882
+      ],
+      "Irradiance_TOO_Downwelling": 1570.5744280131153,
+      "Irradiance_TOO_Upwelling": 34.57123948801343,
+      "Stokes_Vector_TOO": [
+        8.952649134450443,
+        -1.0569813133524355,
+        0.9007665722073741,
+        0.0026638651746522133
+      ]
+    },
+    "lambertian_fresnel": {
+      "Solar_Irradiance": 1867.6961189407493,
+      "Tau_Rayleigh_Extinction": 0.0948936152496954,
+      "Tau_Gas_Absorption": 0.0,
+      "Tau_Aerosol_Extinction": 0.11768013887723969,
+      "Tau_Aerosol_Scattering": 0.11519327290016865,
+      "Irradiance_TOA_Downwelling": 1755.0602608391025,
+      "Irradiance_TOA_Upwelling": 336.1253005176932,
+      "Stokes_Vector_TOA": [
+        95.71146829593233,
+        -3.5209874425209393,
+        4.424222932462096,
+        -0.010160675598199867
+      ],
+      "Irradiance_AirSensor_Downwelling": 1687.9693750437298,
+      "Irradiance_AirSensor_Upwelling": 276.14531393278685,
+      "Stokes_Vector_AirSensor": [
+        79.35606416712852,
+        -1.1004550211203359,
+        0.8538622883551225,
+        0.0002339609196756941
+      ],
+      "Irradiance_BOA_Downwelling": 1672.2996309484865,
+      "Irradiance_BOA_Upwelling": 260.48166344692845,
+      "Stokes_Vector_BOA": [
+        75.69837433681077,
+        -0.4653226214329291,
+        -0.051892270207280385,
+        0.0002503710745537613
+      ]
+    },
+    "mrpv": {
+      "Solar_Irradiance": 1867.6961189407493,
+      "Tau_Rayleigh_Extinction": 0.0948936152496954,
+      "Tau_Gas_Absorption": 0.0,
+      "Tau_Aerosol_Extinction": 0.11768013887723969,
+      "Tau_Aerosol_Scattering": 0.11519327290016865,
+      "Irradiance_TOA_Downwelling": 1755.0602608391025,
+      "Irradiance_TOA_Upwelling": 306.1144001631112,
+      "Stokes_Vector_TOA": [
+        88.99519586866997,
+        -3.210456486299583,
+        4.461918536508864,
+        -0.012380955068686266
+      ],
+      "Irradiance_AirSensor_Downwelling": 1684.6268850975378,
+      "Irradiance_AirSensor_Upwelling": 242.54946209274496,
+      "Stokes_Vector_AirSensor": [
+        73.21548506523938,
+        -0.702144571905423,
+        0.9837234084307086,
+        -1.3942064562132155e-05
+      ],
+      "Irradiance_BOA_Downwelling": 1668.3126906736,
+      "Irradiance_BOA_Upwelling": 226.2370892020473,
+      "Stokes_Vector_BOA": [
+        69.6022281844569,
+        -0.05982248061277366,
+        0.08114045919898796,
+        -2.9134741066012393e-06
+      ]
+    },
+    "snow": {
+      "Solar_Irradiance": 1867.6961189407493,
+      "Tau_Rayleigh_Extinction": 0.0948936152496954,
+      "Tau_Gas_Absorption": 0.0,
+      "Tau_Aerosol_Extinction": 0.11768013887723969,
+      "Tau_Aerosol_Scattering": 0.11519327290016865,
+      "Irradiance_TOA_Downwelling": 933.8480594703749,
+      "Irradiance_TOA_Upwelling": 827.3152652530988,
+      "Stokes_Vector_TOA": [
+        254.6068200004573,
+        3.2244127564984617,
+        10.673427921544013,
+        -0.013228303491773728
+      ],
+      "Irradiance_AirSensor_Downwelling": 906.8410791830717,
+      "Irradiance_AirSensor_Upwelling": 809.7756071054135,
+      "Stokes_Vector_AirSensor": [
+        252.35470670690717,
+        0.569630753304274,
+        1.8643788744723548,
+        -2.064051368769463e-06
+      ],
+      "Irradiance_BOA_Downwelling": 902.5824546862996,
+      "Irradiance_BOA_Upwelling": 805.5322284185213,
+      "Stokes_Vector_BOA": [
+        252.01939580641346,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "ross_li": {
+      "Solar_Irradiance": 1867.6961189407493,
+      "Tau_Rayleigh_Extinction": 0.0948936152496954,
+      "Tau_Gas_Absorption": 0.0,
+      "Tau_Aerosol_Extinction": 0.11768013887723969,
+      "Tau_Aerosol_Scattering": 0.11519327290016865,
+      "Irradiance_TOA_Downwelling": 1755.0602608391025,
+      "Irradiance_TOA_Upwelling": 153.4660926434347,
+      "Stokes_Vector_TOA": [
+        39.29431158855327,
+        -3.1858096149288824,
+        4.384807587081591,
+        -0.012347554947343528
+      ],
+      "Irradiance_AirSensor_Downwelling": 1667.3646242379964,
+      "Irradiance_AirSensor_Upwelling": 71.88374228135488,
+      "Stokes_Vector_AirSensor": [
+        20.483075200236566,
+        -0.668129599013292,
+        0.9250462028961148,
+        -1.1614201859338841e-05
+      ],
+      "Irradiance_BOA_Downwelling": 1648.0787855529823,
+      "Irradiance_BOA_Upwelling": 52.59907449113126,
+      "Stokes_Vector_BOA": [
+        16.388631538804713,
+        -0.019926724528507238,
+        0.027037659140628036,
+        -9.595617845377723e-07
+      ]
+    }
+  },
+  "snow_mirror": {
+    "Stokes_Vector_TOA": [
+      254.60237904839406,
+      3.2244127564984617,
+      -10.673427921544013,
+      0.013228303491773728
+    ],
+    "Stokes_Vector_AirSensor": [
+      252.34916246300924,
+      0.569630753304274,
+      -1.8643788744723548,
+      2.064051368769463e-06
+    ],
+    "Stokes_Vector_BOA": [
+      252.01371934634844,
+      0.0,
+      0.0,
+      0.0
+    ]
+  }
+}

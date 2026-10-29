@@ -201,6 +201,7 @@ curves, the installed Python/CLI route is:
 ```shell
 $ rtsos simulate examples/monochromatic_ocean.toml ocean.nc
 $ rtsos simulate examples/monochromatic_land.toml land.nc
+$ rtsos simulate examples/uv_land.toml uv_land.nc
 $ rtsos simulate examples/response_ocean.toml ocean_bands.nc
 $ rtsos simulate examples/response_land.toml land_bands.nc
 ```
@@ -209,6 +210,9 @@ Set each example's data locations first. The monochromatic examples evaluate
 551.25 and 443.125 nm; the land example supplies micrometres. Python uses the same `simulate` function.
 See [the examples guide](examples/README.md#requested-monochromatic-wavelengths)
 for the wavelength, model, data, illumination, units and numerical contracts.
+The [native coverage guide](examples/qualification.md) records the executed
+eight-model matrix, measured numerical sensitivity, reference independence and
+the UV-land example.
 Full-response integration uses every supplied calibration node and shares scene
 preparation across the wavelength set. See [band simulation](examples/README.md#full-response-band-simulation)
 for the trapezoidal method, complete OCI selections and result schema.

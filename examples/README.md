@@ -165,8 +165,8 @@ the existing atmosphere/particle and ocean preparation. Sensor selection does
 not change them.
 
 `numerics` accepts `ncolinput`, `nquadainput`, `nquadoinput` and `MAXMORDINPUT`.
-These retain their native collocation, atmospheric/ocean quadrature and Fourier
-order meanings. Integer inputs must be representable by the native int32 format;
+These control the number of scattering orders, atmospheric/ocean quadrature
+and Fourier order. Integer inputs must be representable by the native int32 format;
 there is no additional fixed limit on the operating settings.
 
 The legacy PACE driver passes `min(30, nquadainput, MAXMORDINPUT)` as the
@@ -218,6 +218,10 @@ selection trims, clips, normalizes, resamples or interpolates calibration data.
 Wavelength units are explicit `nm` or `um`.
 
 ## Requested monochromatic wavelengths
+
+For the executed eight-model matrix, native reference basis, measured numerical
+sensitivity and an editable UV-land example, see
+[native model coverage and numerical settings](qualification.md).
 
 `monochromatic_ocean.toml` and `monochromatic_land.toml` evaluate **551.25 nm and
 443.125 nm**, in that order. The land example supplies the same wavelengths in
@@ -297,9 +301,9 @@ The compiled core stores phase degrees through `MAXLFULL=3000`; exceeding that
 representation requires rebuilding the core. There is no wavelength-count,
 request-count or workload ceiling. `rt_fourier_order_limit` and
 `phase_expansion_order` report the actual bounds; they do not establish
-convergence. Existing collocation, quadrature, optical-depth integration steps
-(0.05 atmosphere, 0.1 ocean), delta fit and atmospheric/ocean absorption-depth
-reduction are retained. As in PACE, the atmospheric absorption removed during
+convergence. Existing scattering-order controls, quadrature, optical-depth
+integration steps (0.05 atmosphere, 0.1 ocean), delta fit and atmospheric/ocean
+absorption-depth reduction are retained. As in PACE, the atmospheric absorption removed during
 preparation is restored to non-TOA detector products using the exponential of
 the preserved column depth. This retains the native approximation.
 `physics.atmosphere=false` retains the public 10⁻¹² Rayleigh optical

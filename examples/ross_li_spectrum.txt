@@ -1,0 +1,4 @@
+Ross-Li: wavelength_nm fiso fvol fgeo Bpol real_index imaginary_index
+2
+300 0.0399 0.0245 0.0072 0.1 1.5 0
+800 0.0399 0.0245 0.0072 0.1 1.5 0

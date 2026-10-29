@@ -1,0 +1,4 @@
+Lambertian-Fresnel: wavelength_nm albedo fraction_lambertian blank blank real_index imaginary_index
+2
+300 0.2 0.7 0 0 1.5 0
+800 0.2 0.7 0 0 1.5 0
