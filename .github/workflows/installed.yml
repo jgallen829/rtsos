@@ -1,0 +1,64 @@
+name: Installed package
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      # Operating budget; extend the matrix or raise parallelism as needed.
+      max-parallel: 2
+      matrix:
+        python: ['3.12', '3.13', '3.14']
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      PYTHONNOUSERSITE: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # setuptools-scm needs release tags and history
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential gfortran cmake libhdf5-dev libblas-dev liblapack-dev
+      - name: Build wheel and source distribution
+        run: |
+          unset PYTHONPATH SETUPTOOLS_SCM_PRETEND_VERSION SETUPTOOLS_SCM_PRETEND_VERSION_FOR_RTSOS
+          python -m pip install build
+          python -m build --wheel --sdist --outdir "$RUNNER_TEMP/dist" .
+          unzip -l "$RUNNER_TEMP"/dist/*.whl
+          tar -tzf "$RUNNER_TEMP"/dist/*.tar.gz
+      - name: Test clean wheel installation outside the checkout
+        shell: bash
+        run: |
+          unset PYTHONPATH
+          mkdir "$RUNNER_TEMP/source"
+          tar -xzf "$RUNNER_TEMP"/dist/*.tar.gz -C "$RUNNER_TEMP/source"
+          source_root=$(find "$RUNNER_TEMP/source" -mindepth 1 -maxdepth 1 -type d)
+          python -m venv "$RUNNER_TEMP/wheel-env"
+          "$RUNNER_TEMP/wheel-env/bin/python" -m pip install "$RUNNER_TEMP"/dist/*.whl pytest
+          export PATH="$RUNNER_TEMP/wheel-env/bin:$PATH"
+          cd "$RUNNER_TEMP"
+          python -I "$source_root/validation/check_installed.py" "$source_root" "$RUNNER_TEMP/wheel-check"
+      - name: Build and test from sdist without Git metadata
+        if: matrix.python == '3.12'
+        shell: bash
+        run: |
+          unset PYTHONPATH SETUPTOOLS_SCM_PRETEND_VERSION SETUPTOOLS_SCM_PRETEND_VERSION_FOR_RTSOS
+          source_root=$(find "$RUNNER_TEMP/source" -mindepth 1 -maxdepth 1 -type d)
+          python -m venv "$RUNNER_TEMP/sdist-env"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/sdist-env/bin/python" -m pip install "$RUNNER_TEMP"/dist/*.tar.gz pytest
+          export PATH="$RUNNER_TEMP/sdist-env/bin:$PATH"
+          python -I "$source_root/validation/check_installed.py" "$source_root" "$RUNNER_TEMP/sdist-check"

@@ -35,110 +35,43 @@ top-of-atmosphere measurements.
 
 ## 1. Installation
 
-The software is distributed as source code, so the programs must be built locally. There
-are two options for building:
-- use `cmake` to build and install the binary RTSOS executables
-- use `pip` to build and install the binary RTSOS executables along with their Python
-   wrappers
+Installing the `rtsos` Python package builds both the public Python/CLI interface
+and five native commands: `rtsos_Monochromatic`, `rtsos_PACE_Simulator_DoubleK`,
+`rtsos_GSFC_AC_LUT`, `rtsos_Aerosol_Phmx_Cal` and `rtsos_rao_dg`.
 
-### 1.1A First Option
+### 1.1 Source installation
 
-The software is configured for building with `cmake` on a system with the following
-prerequistes available:
+Build prerequisites are [Python] >= 3.12 (CI matrix: 3.12–3.14), C/C++ and
+[Fortran] compilers, [HDF5] >= 1.10 with its Fortran and high-level Fortran
+libraries/modules, and [LAPACK] >= 3.9 with BLAS. [CMake] >= 3.22 and Make are
+required; pip's isolated build installs CMake when needed through
+scikit-build-core. Use compatible compiler and HDF5 Fortran toolchains.
+For Ubuntu 24.04:
 
-- [CMake] >= 3.31
-- [HDF5] >= 1.10
-- [LAPACK] >= 3.9
-- a modern [Fortran] compiler (e.g. gfortran)
-
-One option for installing these prerequistes is through [Conda], which is described in
-[section 1.1B](#11b-second-option), but installation with a system package manager is
-also suitable.
-
-#### Get the Source Code
-
-You can retrieve the [latest release] by downloading the `.zip` or `.tar.gz` assets from
-GitHub. Alternatively, to retrieve the development version, use `git`:
-
-```shell
-git clone --filter=blob:none https://github.com/aoog-umbc/rtsos
+```sh
+sudo apt-get update
+sudo apt-get install --yes build-essential gfortran cmake libhdf5-dev libblas-dev liblapack-dev python3-venv
+git clone https://github.com/jgallen829/rtsos.git
+cd rtsos
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install .
+rtsos --help
 ```
 
-#### Build and Install
+Retain Git history and release tags for setuptools-scm version discovery;
+`git fetch --tags` repairs an existing tagless clone. A built source distribution
+also carries its version and can be installed with
+`python -m pip install /path/to/rtsos-<version>.tar.gz` without Git or
+pretend-version overrides. GitHub's automatic source archives do not carry that
+generated package metadata; use a Git clone or a built sdist for Python
+installation. The [upstream releases][latest release] remain available separately
+from this fork's current interface.
 
-Open a Terminal with the working directory at the project root (i.e. where this
-README.md is located). Choose an unused name for the RTSOS build directory, and
-optionally an existing installation prefix, and call `cmake`. For example, to use a
-folder named "build" for the build files and the `.local` folder within your home
-directory as the prefix for installation:
-
-```shell
-$ cmake -B build --install-prefix ~/.local
-```
-
-The `--install-prefix` argument is optional. Now change to the build directory and run
-cmake twice more, first with `--build` and then with `--install`.
-
-```shell
-$ cd build
-$ cmake --build .
-$ cmake --install .
-```
-
-CMake will display the locations of the binary executables installed. If CMake cannot
-find the prerequisties, you can provide an environment variable with the prefix, e.g.
-`export HDF5_ROOT=...`. The prefix is the path up to the folder containing the "lib"
-folder with the HDF5 libraries.
-
-### 1.1B Second Option
-
-The software is configured for building with `pip` on a system with the following
-prerequistes available:
-
-- [Python] >= 3.12
-- [HDF5] >= 1.10
-- [LAPACK] >= 3.9
-- a modern [Fortran] compiler (e.g. gfortran)
-
-The installer `pip` calls the Python wrapper's build-system, `scikit-build-core`, which
-also uses `cmake` to compile the source code. Those tools are fetched by `pip` as
-needed.
-
-One option for installing the prerequistes is through [Conda], which is our recommended
-approach for preparing a Python environment for use with the Python wrapper. Choose a
-name for the Conda environment and create it with the required prerequistes. For
-example, with "my-project" as the environment name:
-
-```shell
-$ conda create --yes --name my-project python hdf5 lapack
-$ conda activate my-project
-```
-
-To install the [latest release] from PyPI:
-
-```shell
-(my-project) $ pip install rtsos
-```
-
-To install the development version from GitHub:
-
-```shell
-(my-project) $ pip install git+https://github.com/aoog-umbc/rtsos
-```
-
-If installation fails with the message `ERROR: Could not build wheels for rtsos...`,
-then CMake may not have found the prerequisties. You can provide an environment variable
-with their prefix, e.g. `export HDF5_ROOT=...`. The prefix is the path up to the folder
-containing the "lib" folder with the HDF5 libraries.
-
-For a build from a Git checkout, retain the release tags so the version provider can
-derive the package version. The public tag `v1.0-public-2025-10-23` supplies version
-`1.0`; subsequent commits receive a development version. No pretend-version
-environment variable is needed. To build a wheel locally, run:
-
-```shell
-$ python -m pip wheel --no-deps --wheel-dir dist .
-```
+With a system package manager or [Conda], provide the same native dependencies
+and compilers. If CMake cannot discover HDF5, set `HDF5_ROOT` to the prefix
+containing its `lib` and `include` directories. Source installation uses the
+existing scikit-build-core/setuptools-scm/CMake backend.
 
 Some macOS HDF5 installations expose the Fortran library but omit the high-level
 Fortran library location during CMake discovery. If CMake reports that it cannot
@@ -146,12 +79,29 @@ locate `hdf5::hdf5_hl_fortran`, provide the installed library explicitly, using
 your HDF5 prefix (and its actual library filename):
 
 ```shell
-$ export HDF5_ROOT="$CONDA_PREFIX"
-$ CMAKE_ARGS="-DHDF5_Fortran_HL_LIBRARY=$HDF5_ROOT/lib/libhdf5_hl_fortran.dylib" python -m pip wheel --no-deps --wheel-dir dist .
+export HDF5_ROOT="$CONDA_PREFIX"
+CMAKE_ARGS="-DHDF5_Fortran_HL_LIBRARY=$HDF5_ROOT/lib/libhdf5_hl_fortran.dylib" python -m pip install .
 ```
 
 The same setting can be passed as `-DHDF5_Fortran_HL_LIBRARY=...` to a direct
 CMake configure. Use a compiler and HDF5 Fortran modules from compatible toolchains.
+
+Native executables retain runtime dependencies on the build platform's HDF5,
+BLAS/LAPACK and compiler libraries. Keep those compatible libraries installed
+and discoverable by the platform loader. A locally built wheel is specific to
+its platform and library environment; this build does not bundle or repair
+native libraries into a universally portable wheel.
+
+To build distribution artifacts:
+
+```sh
+python -m pip install build
+python -m build --wheel --sdist
+```
+
+The wheel contains Python production modules and native commands. The sdist
+also contains examples, regression tests/fixtures and the installed check below;
+auxiliary datasets and local audit/build files are excluded.
 
 ### 1.2 Auxiliary Data
 
@@ -159,7 +109,7 @@ In addition to the software, simulating the PACE instruments and generating atmo
 correction look-up tables requires a collection of data files available from a Zenodo
 repository:
 
-https://doi.org/10.5281/zenodo.17410093
+[RTSOS auxiliary data](https://doi.org/10.5281/zenodo.17410093).
 
 The auxiliary data file is named as `RTSOS_data_v1.0_20251022.tar.gz`, which can be
 extracted into a convenient location of your choice. You can extract the files by doing
@@ -180,48 +130,111 @@ scattering matrix of dust particles, the instrument response functions of ocean 
 instrument, HARP2, and SPEXone, and a number of other data files used in the PACE
 simulator.
 
-## 2. Usage
+Arrange the extracted directories as follows, or use equivalent existing
+directories through the two explicit paths:
 
-The first or two ways to use RTSOS is with a single parameterization given to the binary
-executables as a plain text file. You can do this regardless of the installation method
-above; follow the procedures in [section 2.1A](#21a-binary-executables). The second way
-to use RTSOS is with multiple parameterizations given to the Python wrapper in a single
-NetCDF file. You can do this if you used the second installation option [section
-1.1B](#11b-second-option); follow the procedures
-in [section 2.1B](#21b-python-wrapper).
-
-### 2.1A Binary Executables
-
-For monochromatic simulation, users are referred to the documentation located at
-"Documentation/Describtion_of_input_files/SOS_io.pdf" in the source code repository.
-
-For readable physical cases at requested wavelengths or through complete response
-curves, the installed Python/CLI route is:
-
-```shell
-$ rtsos simulate examples/monochromatic_ocean.toml ocean.nc
-$ rtsos simulate examples/monochromatic_land.toml land.nc
-$ rtsos simulate examples/uv_land.toml uv_land.nc
-$ rtsos simulate examples/response_ocean.toml ocean_bands.nc
-$ rtsos simulate examples/response_land.toml land_bands.nc
+```text
+RTSOS_data/
+├── Data/
+└── Gas_Absorption_Coefficients/
+    └── atmmod/
 ```
 
-Set each example's data locations first. The monochromatic examples evaluate
-551.25 and 443.125 nm; the land example supplies micrometres. Python uses the same `simulate` function.
+In each example's `[data]` table, set `root = "/absolute/path/to/RTSOS_data"`,
+or replace `root` with both `auxiliary = "/path/to/Data"` and
+`gas_absorption = "/path/to/Gas_Absorption_Coefficients"`. Relative paths are
+resolved against the case file. The shipped `../RTSOS_data` root places these
+directories at the checkout root when using cases in `examples/`.
+The [coverage guide](examples/qualification.md) describes optional snow tables
+and caller-supplied data for scientific checks.
+
+### 1.3 Native executables only
+
+With the same native prerequisites, direct CMake installation remains available:
+
+```sh
+cmake -S . -B build --install-prefix "$HOME/.local"
+cmake --build build --parallel 2
+cmake --install build
+```
+
+Add the installation's `bin` directory to `PATH`. The parallel count is an
+adjustable build budget. This route installs native commands; use the Python
+package installation above for `rtsos` and the public Python API.
+
+### 1.4 Installed-package checks and CI
+
+[GitHub Actions](.github/workflows/installed.yml) builds on Ubuntu 24.04 with
+Python 3.12–3.14, then checks fresh non-editable wheel installations outside
+the checkout. Python 3.12 also builds and installs the sdist without Git metadata.
+The workflow uses system compiler/HDF5/BLAS/LAPACK dependencies and downloads
+no auxiliary datasets. Its matrix parallelism and compiler parallel count are
+editable resource budgets.
+
+To check either installation yourself, unpack its sdist outside the checkout,
+activate a fresh virtual environment, install the wheel or sdist plus pytest,
+then run from another directory with source `PYTHONPATH` unset:
+
+```sh
+python -m pip install /path/to/rtsos-<version>.tar.gz pytest
+unset PYTHONPATH
+cd /path/outside/the/checkout
+python -I /path/to/unpacked-sdist/validation/check_installed.py /path/to/unpacked-sdist /path/to/new-check-output
+```
+
+The check verifies installed module/command ownership, native startup/linking,
+CLI help/templates/dry runs and the data-free regression suite, including
+synthetic recovery/split-combine and exact response preservation. Native/data
+tests retain their existing opt-in `--native` boundary. Build and API checks
+are separate from [scientific model qualification](examples/qualification.md).
+
+## 2. Usage
+
+### Quick start: one explicit case
+
+After installation and setting the data paths, run from the checkout or unpacked
+sdist root:
+
+```sh
+rtsos simulate examples/single_direction.toml single.nc --dry-run
+rtsos simulate examples/single_direction.toml single.nc
+```
+
+This is a Lambertian land scene at solar zenith 20°, aerosol optical depth
+0.125 at 532 nm, with one propagation-zenith/relative-azimuth pair
+`(37.25°, 315°)`. It evaluates 551.25 and 443.125 nm, supplied in micrometres.
+The product retains the singleton `observation` dimension. A dry run writes
+native input records without data access or native execution. Python calls
+the same dispatcher:
+
+```python
+from rtsos import load_case, simulate
+
+case = load_case("examples/single_direction.toml")
+result = simulate(case, "single.nc")
+print(result.Wavelength_Evaluated.values)
+```
+
 See [the examples guide](examples/README.md#requested-monochromatic-wavelengths)
 for the wavelength, model, data, illumination, units and numerical contracts.
 The [native coverage guide](examples/qualification.md) records the executed
 eight-model matrix, measured numerical sensitivity, reference independence and
 the UV-land example.
-Full-response integration uses every supplied calibration node and shares scene
+For full-response band products:
+
+```sh
+rtsos simulate examples/response_directions.toml direction_bands.nc
+```
+
+These are response-weighted products over every supplied calibration node,
+whereas monochromatic products evaluate the requested physical wavelengths.
+Full-response integration shares scene
 preparation across the wavelength set. See [band simulation](examples/README.md#full-response-band-simulation)
 for the trapezoidal method, complete OCI selections and result schema.
 For paired observations at requested directions, including a single observation:
 
 ```shell
-$ rtsos simulate examples/monochromatic_directions.toml directions.nc
-$ rtsos simulate examples/response_directions.toml direction_bands.nc
-$ rtsos simulate examples/single_direction.toml single.nc
+rtsos simulate examples/monochromatic_directions.toml directions.nc
 ```
 
 Set the example data paths first. The same geometry table serves both spectral
@@ -244,6 +257,13 @@ case and its failure reason. The Python entry point is `simulate_cases`.
 Single-case `simulate` and the existing sweep commands also accept `--resume`.
 See [recoverable execution](examples/README.md#recoverable-case-and-sweep-execution)
 for the record files, explicit retries, changed requests and combine behavior.
+
+### 2.1A Binary Executables
+
+For the low-level monochromatic text interface, see
+[the native input manual](Documentation/Describtion_of_input_files/SOS_io.pdf).
+The established PACE binary and NetCDF sweep interfaces below remain available;
+the [Python wrapper](#21b-python-wrapper) supports templates and split/combine.
 
 ### 2.1A.1 PACE Simulator
 

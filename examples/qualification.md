@@ -205,7 +205,7 @@ permanent model regressions from the repository root:
 ```sh
 export RTSOS_AUXILIARY=/path/to/Data
 export RTSOS_GAS_ABSORPTION=/path/to/Gas_Absorption_Coefficients
-PYTHONPATH=src python -m pytest src/rtsos/tests/test_native_models.py --native -q
+python -I -m pytest --import-mode=importlib src/rtsos/tests/test_native_models.py --native -q
 ```
 
 Choose numerical settings for the actual detector, wavelength and application,

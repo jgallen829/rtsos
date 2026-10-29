@@ -40,6 +40,16 @@ dev = [
 [tool.scikit-build]
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
 sdist.include = ["src/rtsos/_version.py"]
+# Distribution contents must not depend on a developer's personal Git ignores.
+sdist.exclude = [
+    "/audit/",
+    "/RTSOS_data/",
+    "/Data/",
+    "/Auxiliary_Files/",
+    "/Gas_Absorption_Coefficients/",
+]
+# Tests use the examples and configuration shipped together in the sdist.
+wheel.exclude = ["rtsos/tests/**"]
 minimum-version = "build-system.requires"
 cmake.args = ["-G", "Unix Makefiles"]
 

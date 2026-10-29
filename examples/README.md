@@ -1,5 +1,10 @@
 # Physical cases, monochromatic evaluation and full-response bands
 
+For build prerequisites, source installation, data layout and one installed
+case, start with the [installation and quick start](../README.md#1-installation).
+Examples and regression fixtures ship in the source distribution. This guide
+owns the detailed scientific input/output contracts for the public interface.
+
 `pace_ocean.toml` and `pace_land.toml` each specify one physical state. Both select
 solar zenith 20 degrees and upper aerosol optical depth 0.125; ocean chlorophyll
 is 0.5 mg/m³. These are explicit example selections. The existing PACE initializer
