@@ -90,7 +90,7 @@ def test_legacy_capability_error_and_sensor_independence():
 @pytest.mark.parametrize("method", ["monochromatic", "response"])
 @pytest.mark.parametrize("single", [False, True])
 def test_python_cli_observation_identity_and_dimensions(
-    tmp_path, monkeypatch, method, single
+    tmp_path, monkeypatch, method, single, complete_native
 ):
     filename = f"{method}_directions.toml"
     text = (
@@ -113,7 +113,7 @@ def test_python_cli_observation_identity_and_dimensions(
     monkeypatch.setattr("rtsos.monochromatic.check_data", lambda *a: None)
     calls = []
 
-    def native(args, check):
+    def native(args, check, **kwargs):
         assert args[0] == "rtsos_Monochromatic" and check
         rows = Path(args[1]).read_text().splitlines()
         i = rows.index("thuillier")
@@ -128,7 +128,7 @@ def test_python_cli_observation_identity_and_dimensions(
         values[:, :, 0] = waves[:, None] + theta + phi
         values[:, :, 1] = -1
         values[:, :, 3] = -0.0
-        xr.Dataset(
+        output = xr.Dataset(
             {
                 "Wavelength_Evaluated": ("evaluation", waves),
                 "Solar_Irradiance": ("evaluation", waves + 10),
@@ -150,7 +150,8 @@ def test_python_cli_observation_identity_and_dimensions(
                 "N_Stokes_Parameter": [1, 2, 3, 4],
                 "Atmosphere_Layer": [1, 2],
             },
-        ).to_netcdf(rows[i - 1] + ".h5")
+        )
+        complete_native(output, rows[i - 1] + ".h5")
         calls.append(angles)
 
     monkeypatch.setattr(subprocess, "run", native)

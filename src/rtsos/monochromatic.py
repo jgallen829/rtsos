@@ -220,8 +220,25 @@ class Monochromatic(PACE):
         yield inputs
 
     def read_output(self, path, inputs):
-        _, inverse = _evaluation_grid(inputs)
+        waves, inverse = _evaluation_grid(inputs)
         result = xr.load_dataset(path)
+        if (
+            result.sizes.get("evaluation") != waves.size
+            or not np.array_equal(result.evaluation, np.arange(waves.size))
+            or "Wavelength_Evaluated" not in result
+            or result.Wavelength_Evaluated.dims != ("evaluation",)
+            or not np.array_equal(result.Wavelength_Evaluated, waves)
+        ):
+            raise ValueError(
+                "Native evaluation identity/dimensions differ from the wavelength request"
+            )
+        if "observation" in inputs and (
+            result.sizes.get("observation") != inputs.sizes["observation"]
+            or not np.array_equal(result.observation, inputs.observation)
+        ):
+            raise ValueError(
+                "Native observation identity/dimensions differ from the request"
+            )
         request = inputs.request
         if "observation" in inputs:
             result = result.set_coords(["ThetaV", "PhiV"])
@@ -231,6 +248,86 @@ class Monochromatic(PACE):
             .assign_coords(request=request)
             .drop_vars("evaluation")
         )
+
+    def validate_output(self, dataset, inputs):
+        super().validate_output(dataset, inputs)
+        levels = ["TOA", "AirSensor", "BOA"] + (
+            ["TOO"] if inputs.OCEAN_CASE_SELECT.item() >= 0 else []
+        )
+        required = ["Solar_Irradiance"]
+        for level in levels:
+            required.extend(
+                (
+                    f"Stokes_Vector_{level}",
+                    f"Irradiance_{level}_Downwelling",
+                    f"Irradiance_{level}_Upwelling",
+                )
+            )
+        if "spectral_node" in dataset.dims:
+            required += ["Node_" + name for name in required]
+        missing = set(required) - set(dataset.variables)
+        if missing:
+            raise ValueError(f"Missing required radiometric fields: {sorted(missing)}")
+        if any(dataset[name].dtype != np.dtype("float64") for name in required):
+            raise ValueError("Native radiometric products require float64 precision")
+        axis = "spectral_node" if "spectral_node" in dataset.dims else "request"
+        if (
+            dataset.sizes.get(axis) != inputs.sizes["request"]
+            or not np.array_equal(dataset.Wavelength_Evaluated, inputs.wavelength_nm)
+            or dataset.sizes.get("N_Stokes_Parameter") != 4
+            or not np.array_equal(dataset.N_Stokes_Parameter, [1, 2, 3, 4])
+        ):
+            raise ValueError(
+                "Product wavelength/Stokes identity or dimensions differ from request"
+            )
+        spectral = "channel" if "channel" in dataset.dims else "request"
+        expected = (
+            (spectral, "observation", "N_Stokes_Parameter")
+            if "observation" in inputs
+            else (spectral, "N_Stokes_Parameter", "PhiV", "ThetaV")
+        )
+        if "Stokes_Vector_TOA" not in dataset:
+            raise ValueError("Missing required Stokes_Vector_TOA")
+        if dataset.Stokes_Vector_TOA.dims != expected:
+            raise ValueError("Product Stokes dimensions differ from request")
+        for name, field in dataset.data_vars.items():
+            node = name.startswith("Node_")
+            name = name.removeprefix("Node_")
+            field_axis = axis if node else spectral
+            if name.startswith("Stokes_Vector_"):
+                if field.dims != (field_axis, *expected[1:]):
+                    raise ValueError(f"Invalid {name} dimensions")
+            elif name.startswith("Irradiance_") or name == "Solar_Irradiance":
+                if field.dims != (field_axis,):
+                    raise ValueError(f"Invalid {name} dimensions")
+        if "observation" in inputs:
+            if not np.array_equal(dataset.observation, inputs.observation):
+                raise ValueError("Product observation identity differs from request")
+            for name in ("ThetaV", "PhiV"):
+                if dataset[name].dims != ("observation",) or not np.all(
+                    np.isfinite(dataset[name])
+                ):
+                    raise ValueError(f"Invalid {name} observation dimensions or values")
+            # Compare zenith in cosine space to avoid amplifying acos roundoff
+            # near the poles. Azimuth is the native modulo-360 convention.
+            rounding = 8 * np.finfo(np.float64).eps
+            if not np.allclose(
+                np.cos(np.deg2rad(dataset.ThetaV)),
+                np.cos(np.deg2rad(inputs.viewing_zenith_requested)),
+                rtol=0,
+                atol=rounding,
+            ) or not np.allclose(
+                dataset.PhiV,
+                inputs.relative_azimuth_requested % 360,
+                rtol=0,
+                atol=rounding * 360,
+            ):
+                raise ValueError("Evaluated direction identity differs from request")
+        elif (
+            dataset.sizes.get("ThetaV") != inputs.NTHETAV.item()
+            or dataset.sizes.get("PhiV") != inputs.NPHIV.item()
+        ):
+            raise ValueError("Native grid dimensions differ from requested counts")
 
     def result_inputs(self, inputs, outputs):
         if not np.array_equal(outputs.Wavelength_Evaluated, inputs.wavelength_nm):

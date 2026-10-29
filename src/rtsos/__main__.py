@@ -11,6 +11,14 @@ parser = ArgumentParser(
 )
 common = ArgumentParser(add_help=False)
 common.add_argument(
+    "--resume", action="store_true", help="reuse completed matching native groups"
+)
+common.add_argument(
+    "--retry-failed",
+    action="store_true",
+    help="with --resume, explicitly retry scientific failures as well",
+)
+common.add_argument(
     "--dry-run",
     default=False,
     dest="dry",
@@ -113,16 +121,60 @@ simulate_parser.add_argument(
     action="store_true",
     help="write native input records without execution",
 )
+simulate_parser.add_argument("--resume", action="store_true")
+simulate_parser.add_argument("--retry-failed", action="store_true")
+
+cases_parser = subparsers.add_parser(
+    "simulate-cases",
+    description="Run an ordered list of named case files independently.",
+)
+cases_parser.add_argument(
+    "cases", type=Path, help="TOML file containing [[cases]] name/file entries"
+)
+cases_parser.add_argument(
+    "outputs", type=Path, help="directory for name.nc products and accounting"
+)
+cases_parser.add_argument("--resume", action="store_true")
+cases_parser.add_argument("--retry-failed", action="append", default=[], metavar="NAME")
+cases_parser.add_argument("--tmp", type=Path, default=Path(gettempdir()))
+cases_parser.add_argument("--dry-run", action="store_true")
 
 
 def main(argv: str | None = None) -> None:
     args = parser.parse_args(argv)
+    from .execution import ExecutionFailure
+
+    if args.program == "simulate-cases":
+        from .simulation import simulate_cases
+
+        try:
+            report = simulate_cases(
+                args.cases,
+                args.outputs,
+                resume=args.resume,
+                retry_failed=args.retry_failed,
+                tmp=args.tmp,
+                dry_run=args.dry_run,
+            )
+        except (ValueError, OSError) as error:
+            cases_parser.error(str(error))
+        expected_status = "unattempted" if args.dry_run else "successful"
+        if any(r["status"] != expected_status for r in report["records"]):
+            cases_parser.exit(1, str(ExecutionFailure(report)) + "\n")
+        return
     if args.program == "simulate":
         from .simulation import simulate
 
         try:
-            simulate(args.case, args.outputs, tmp=args.tmp, dry_run=args.dry_run)
-        except (ValueError, NotImplementedError, FileNotFoundError) as error:
+            simulate(
+                args.case,
+                args.outputs,
+                tmp=args.tmp,
+                dry_run=args.dry_run,
+                resume=args.resume,
+                retry_failed=args.retry_failed,
+            )
+        except (ValueError, NotImplementedError, OSError) as error:
             simulate_parser.error(str(error))
         return
     module = import_module(f"{__package__}.{args.program}")
@@ -131,7 +183,10 @@ def main(argv: str | None = None) -> None:
         if args.program == "PACE_Simulator_DoubleK"
         else module.init()
     )
-    program(args)
+    try:
+        program(args)
+    except ExecutionFailure as error:
+        parser.exit(1, str(error) + "\n")
 
 
 if __name__ == "__main__":

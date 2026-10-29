@@ -4,6 +4,26 @@ from pytest import fixture
 from rtsos.__main__ import main
 
 
+@fixture
+def complete_native():
+    """Complete the small synthetic native-I/O fixtures, without an RT model."""
+
+    def write(dataset, path, *, ocean=False):
+        if "Solar_Irradiance" not in dataset:
+            dataset["Solar_Irradiance"] = dataset.Wavelength_Evaluated + 10
+        for level in ["TOA", "AirSensor", "BOA"] + (["TOO"] if ocean else []):
+            if f"Stokes_Vector_{level}" not in dataset:
+                dataset[f"Stokes_Vector_{level}"] = dataset.Stokes_Vector_TOA.copy()
+            for direction in ("Downwelling", "Upwelling"):
+                if f"Irradiance_{level}_{direction}" not in dataset:
+                    dataset[f"Irradiance_{level}_{direction}"] = (
+                        dataset.Solar_Irradiance.copy()
+                    )
+        dataset.to_netcdf(path)
+
+    return write
+
+
 @fixture(scope="session")
 def phmx_cache_dir(pytestconfig):
     return pytestconfig.cache.mkdir("phmx")

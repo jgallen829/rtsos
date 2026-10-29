@@ -226,7 +226,7 @@ def test_output_keeps_native_inactive_flags(tmp_path, monkeypatch, mixed, surfac
     """Land omits ocean flags; case zero reads them but disables their processes."""
     import subprocess
 
-    def native(args, check):
+    def native(args, check, **kwargs):
         assert check
         rows = records(Path(args[1]))
         selected = int(rows[12])
@@ -272,7 +272,7 @@ def test_output_keeps_native_inactive_flags(tmp_path, monkeypatch, mixed, surfac
 def test_native_spectral_flag_reset(tmp_path, monkeypatch, gas_abs, atmos_zero):
     import subprocess
 
-    def native(args, check):
+    def native(args, check, **kwargs):
         assert check
         rows = records(Path(args[1]))
         assert rows[38] == "0"  # Requested monochromatic flag remains unchanged.
@@ -280,6 +280,7 @@ def test_native_spectral_flag_reset(tmp_path, monkeypatch, gas_abs, atmos_zero):
             {
                 "MONOCHROMATIC_FLAG": np.int32(1),
                 "SUN_GLINT_FLAG": np.int32(atmos_zero),
+                "Radiance_TOA": ("Wavelength", [0.0, 1.0]),
             }
         ).to_netcdf(Path(rows[-1]).with_suffix(".outfile.h5"))
 
@@ -298,7 +299,7 @@ def test_native_spectral_flag_reset(tmp_path, monkeypatch, gas_abs, atmos_zero):
 def test_native_flag_reset_remains_checked(tmp_path, monkeypatch):
     import subprocess
 
-    def wrong_native(args, check):
+    def wrong_native(args, check, **kwargs):
         assert check
         rows = records(Path(args[1]))
         # Case zero must report Raman disabled, even when the request was one.
@@ -310,5 +311,7 @@ def test_native_flag_reset_remains_checked(tmp_path, monkeypatch):
     program = init()
     state = program.defaults.isel(Solar_Zenith_Angle=0, tau_ref_hi=0, chla=0)
     state = state.assign_coords(OCEAN_CASE_SELECT=np.int32(0))
-    with pytest.raises(Exception, match="zhai-rt#2"):
-        program.run(state, tmp_path / "output.nc", tmp_path, False)
+    report = program.run(state, tmp_path / "output.nc", tmp_path, False)
+    assert report["records"][0]["status"] == "scientifically_failed"
+    assert "OCEAN_RAMAN_FLAG" in report["records"][0]["reason"]
+    assert not (tmp_path / "output.nc").exists()

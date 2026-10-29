@@ -1,0 +1,10 @@
+# Set the data paths in the referenced cases, then run:
+# rtsos simulate-cases examples/cases.toml results
+# rtsos simulate-cases examples/cases.toml results --resume
+[[cases]]
+name = "directions"
+file = "single_direction.toml"
+
+[[cases]]
+name = "bands"
+file = "response_directions.toml"

@@ -13,9 +13,11 @@ rtsos simulate pace_ocean.toml ocean.nc
 rtsos simulate pace_land.toml land.nc
 ```
 
-Each command retains the native input text beside the NetCDF result. Add
-`--dry-run` to write those records without execution, or `--tmp /path/to/scratch`
-to choose the temporary-file location. The native executable must be on `PATH`,
+Each command retains the native input text beside the NetCDF result and keeps
+native logs/raw output in a durable `.records` directory. Add `--dry-run` to write
+input records without execution; `--tmp /path/to/scratch` chooses the dry-run
+temporary-file location. Executed records use durable output-side workspaces.
+The native executable must be on `PATH`,
 as with the legacy command. Numerics and viewing counts are ordinary adjustable
 settings, without a separate workload ceiling. The small example settings do
 not establish angular or spectral convergence.
@@ -575,3 +577,121 @@ response thresholds, band segmentation, mirror default, or double-k method.
 Runtime still depends on unique-node count, scene, gas absorption and the
 viewing/numerical settings; no dense-OCI performance or convergence guarantee
 follows from the small examples.
+
+## Recoverable case and sweep execution
+
+`cases.toml` is an ordered list of existing case files. It adds names and paths,
+while each referenced file continues to own its scene, geometry, responses,
+spectral method, illumination and numerical settings:
+
+```toml
+[[cases]]
+name = "directions"
+file = "single_direction.toml"
+
+[[cases]]
+name = "bands"
+file = "response_directions.toml"
+```
+
+Set data paths in those case files, then run from the repository root:
+
+```sh
+rtsos simulate-cases examples/cases.toml results
+rtsos simulate-cases examples/cases.toml results --resume
+# Retry a scientifically failed case explicitly; this option can be repeated.
+rtsos simulate-cases examples/cases.toml results --resume --retry-failed bands
+```
+
+Paths in the list resolve relative to the list; paths inside each case resolve
+relative to that case. Names must be unique filename components. Products use
+ordinary filenames: `results/directions.nc` and `results/bands.nc`. Cases run
+serially in list order, without a fixed workload ceiling. Heterogeneous products
+remain separate files. A case with a bad scientific result or unavailable
+dependency does not prevent later independent cases from running.
+
+Python returns accounting for the whole list:
+
+```python
+from rtsos import simulate_cases
+
+report = simulate_cases("examples/cases.toml", "results", resume=True)
+for record in report["records"]:
+    print(record["name"], record["status"], record.get("reason", ""))
+```
+
+Statuses are `successful`, `scientifically_failed`, `retryable`, `blocked`,
+`cancelled` and `unattempted`. A nonzero native exit with a nonnegative exit code,
+invalid output identity/dimensions, or nonfinite radiometric values records a
+scientific/native failure requiring explicit retry. The label does not diagnose
+physical nonconvergence. Missing output, native signal termination and failed
+product writes are retryable. A missing/inaccessible executable or missing input
+dependency is blocked. Resume reassesses operational blocks and incomplete work;
+unchanged scientific failures retain their reasons and require `--retry-failed`.
+Changing the request or its data creates a new identity that can run normally.
+`Ctrl-C` records cancellation and leaves later work unattempted; the same resume
+command continues it. CLI list/sweep execution exits nonzero for incomplete work.
+
+The list plan and its population remain in `results/case-runs/<run>.json`;
+`results/cases.json` is a convenient latest summary. Every product has a sibling
+`<filename>.records/` directory. Inside, a request identity directory contains
+`plan.json`, numbered execution records, per-record `state.json`, and an atomic
+`product.nc` with its publication hash receipt. Each attempt retains its own
+native input, `native.log`, raw output when available, and failure state. A
+legacy sweep record is one scalar state. A monochromatic or response record is
+the scene's full wavelength set in one native process. Repeated wavelengths,
+paired observations, valid zero radiances and signed Stokes/calibration values
+retain their existing meaning.
+
+Native results are checked before publication. Monochromatic/response products
+require float64 solar irradiance, Stokes vectors and upward/downward irradiance
+at every applicable native detector level, with the requested wavelength and
+viewing identities/dimensions. Missing fields or nonfinite radiometry retain a
+scientific failure; finite signed values and zeros remain valid.
+Metadata and complete calibration
+groups are written into the staged case file before its atomic rename. A failed
+or interrupted write stays as a hidden `.partial.nc` file and cannot qualify as
+complete. Completed matching records survive missing/stale optional summaries;
+resume checks their hash receipts and scientific dimensions before reuse. A
+failed replacement removes the old public filename and retains its original
+file under `.records/history/`; it is never silently returned as the new result.
+Old attempts and products for changed requests remain available as evidence.
+Keep `.records` and `case-runs` with the outputs when moving or archiving work.
+
+Reuse binds actual input values and scientific policies, relevant Python source,
+the resolved native executable bytes, dependency versions and external data file
+contents. Data trees are fingerprinted once per invocation, shared across cases;
+they must remain immutable during execution. Declared outputs, their recovery
+records and generated native inputs are excluded from these input fingerprints,
+including nested and staged legacy split products when inputs and outputs share
+a directory. Empty output-parent directories do not change the input identity;
+other data files in those directories remain fingerprinted.
+Git branch/commit labels, release version strings and
+documentation do not control reuse. Native library/toolchain portability is
+still governed by the installation requirements.
+
+The existing single-case API stays direct:
+
+```sh
+rtsos simulate examples/single_direction.toml single.nc --resume
+rtsos simulate examples/single_direction.toml single.nc --resume --retry-failed
+rtsos PACE_Simulator_DoubleK inputs.nc outputs.nc --resume
+rtsos PACE_Simulator_DoubleK inputs.nc outputs.nc --resume --retry-failed
+```
+
+Python `simulate(case, "single.nc", resume=True)` returns the completed dataset
+or raises an error containing the failed record's reason. Legacy `Program.run`
+returns the record report. Native inputs/logs/raw products survive failures in
+both paths. Native Mie-table-only mode retains its configured database side
+effects and does not produce a radiometric NetCDF file. Its native invocation is
+recorded, but those external tables are not authenticated recovery products and
+are not skipped through the new radiometric product reuse path.
+
+`--split` preserves original positional directories and selections. `--combine`
+requires every selected child's complete product and matching current request,
+runtime and data identity. Missing/failed/stale children prevent publication of
+that combined selection; successful child files remain available. A deliberately
+selected subset is combined only across its stated coordinates. Split products
+created before durable identity records were introduced need to be regenerated
+once to use the authenticated combine path. No combined file is published for
+an incomplete unsplit sweep; accepted per-state products remain in `.records`.

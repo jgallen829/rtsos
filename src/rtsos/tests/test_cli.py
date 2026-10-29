@@ -15,7 +15,7 @@ from rtsos.core import groupby, reduce_by_coords, split_list_arg
 PROGRAMS = ("GSFC_AC_LUT", "PACE_Simulator_DoubleK", "Aerosol_Phmx_Cal")
 
 
-@pytest.mark.parametrize("program", [None, *PROGRAMS, "simulate"])
+@pytest.mark.parametrize("program", [None, *PROGRAMS, "simulate", "simulate-cases"])
 def test_help(program, capsys):
     with pytest.raises(SystemExit) as exc:
         main(([program] if program else []) + ["--help"])
@@ -74,6 +74,33 @@ def test_default_pace_sweep(tmp_path):
         )
     )
     assert all(len(r) == 58 for r in records)
+
+
+def test_invalid_legacy_dry_run_is_not_silently_successful(tmp_path):
+    inputs = (
+        PACE_Simulator_DoubleK.init()
+        .defaults.isel(Solar_Zenith_Angle=0, tau_ref_hi=0, chla=0)
+        .assign_coords(OCEAN_CASE_SELECT=np.int32(99))
+    )
+    inputs.to_netcdf(tmp_path / "inputs.nc")
+    with pytest.raises(ValueError, match="Unsupported OCEAN_CASE_SELECT"):
+        main(
+            [
+                "PACE_Simulator_DoubleK",
+                str(tmp_path / "inputs.nc"),
+                str(tmp_path / "outputs.nc"),
+                "--dry-run",
+            ]
+        )
+
+
+def test_case_list_dry_run_reports_invalid_preparation(tmp_path):
+    (tmp_path / "bad.toml").write_text('[sensor]\nname = "bad"\n')
+    listing = tmp_path / "cases.toml"
+    listing.write_text('[[cases]]\nname = "bad"\nfile = "bad.toml"\n')
+    with pytest.raises(SystemExit) as error:
+        main(["simulate-cases", str(listing), str(tmp_path / "results"), "--dry-run"])
+    assert error.value.code == 1
 
 
 @pytest.mark.parametrize(
@@ -197,7 +224,7 @@ def synthetic_native(monkeypatch):
     """Replace only the native subprocess, retaining real input/output file I/O."""
     calls = []
 
-    def run(args, check):
+    def run(args, check, **kwargs):
         assert check is True
         executable, infile = args
         rows = Path(infile).read_text().splitlines()

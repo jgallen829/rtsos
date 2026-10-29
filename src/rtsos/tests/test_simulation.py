@@ -135,7 +135,7 @@ def test_python_and_cli_same_case(tmp_path, monkeypatch):
     )
     records = []
 
-    def native(args, check):
+    def native(args, check, **kwargs):
         rows = Path(args[1]).read_text().splitlines()
         records.append(rows[:-1])
         assert check

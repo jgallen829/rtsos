@@ -37,7 +37,7 @@ def test_request_records_units_precision_and_order(tmp_path):
         assert float(rows[15].split("#")[0]) == case.scene["water"]["chla"]
 
 
-def test_python_cli_real_program_route(tmp_path, monkeypatch):
+def test_python_cli_real_program_route(tmp_path, monkeypatch, complete_native):
     case = ocean()
     case.spectral["wavelengths"] = [551.25, 443.125, 551.25]
     case.scene["aerosol"]["tau_ref_hi"] = 0.0
@@ -46,26 +46,32 @@ def test_python_cli_real_program_route(tmp_path, monkeypatch):
     monkeypatch.setattr("rtsos.monochromatic.check_data", lambda *a: None)
     records = []
 
-    def native(args, check):
+    def native(args, check, **kwargs):
         assert args[0] == "rtsos_Monochromatic" and check
         rows = Path(args[1]).read_text().splitlines()
         policy = rows.index("thuillier")
         waves = np.array([float(w) for w in rows[policy + 2 :]])
         assert int(rows[policy + 1]) == 2  # Exact A/B/A reuse in one process.
         records.append(rows[: policy - 1] + rows[policy:])
-        xr.Dataset(
+        output = xr.Dataset(
             {
                 "Wavelength_Evaluated": ("evaluation", waves),
                 "Stokes_Vector_TOA": (
-                    ("evaluation", "N_Stokes_Parameter"),
-                    np.array([[w, -0.02, 0.0, -0.0] for w in waves], np.float64),
+                    ("evaluation", "N_Stokes_Parameter", "PhiV", "ThetaV"),
+                    np.broadcast_to(
+                        np.array([[w, -0.02, 0.0, -0.0] for w in waves], np.float64)[
+                            :, :, None, None
+                        ],
+                        (len(waves), 4, 2, 2),
+                    ),
                 ),
             },
             coords={
                 "evaluation": np.arange(len(waves)),
                 "N_Stokes_Parameter": [1, 2, 3, 4],
             },
-        ).to_netcdf(rows[policy - 1] + ".h5")
+        )
+        complete_native(output, rows[policy - 1] + ".h5", ocean=True)
 
     monkeypatch.setattr(subprocess, "run", native)
     result = simulate(case, tmp_path / "python.nc", tmp=tmp_path)

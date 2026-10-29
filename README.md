@@ -226,6 +226,21 @@ See [ordered viewing directions](examples/README.md#ordered-viewing-directions)
 for the propagation-angle, relative-azimuth, detector and Stokes conventions.
 The existing low-level `rtsos_rao_dg` command remains available.
 
+An ordered list of existing cases can run independently and resume:
+
+```shell
+$ rtsos simulate-cases examples/cases.toml results
+$ rtsos simulate-cases examples/cases.toml results --resume
+```
+
+Each named case produces `results/<name>.nc`, including its metadata and exact
+response calibration groups. Completed native groups survive a later failure;
+later independent cases still run. `results/cases.json` reports every requested
+case and its failure reason. The Python entry point is `simulate_cases`.
+Single-case `simulate` and the existing sweep commands also accept `--resume`.
+See [recoverable execution](examples/README.md#recoverable-case-and-sweep-execution)
+for the record files, explicit retries, changed requests and combine behavior.
+
 ### 2.1A.1 PACE Simulator
 
 #### Input Files 

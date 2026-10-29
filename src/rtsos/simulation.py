@@ -1,14 +1,26 @@
 """Readable physical cases and the shared Python/CLI simulation entry point."""
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from os import PathLike
 from pathlib import Path
 from tempfile import gettempdir
 import tomllib
+from time import time_ns
 
 from netCDF4 import Dataset
 import xarray as xr
+
+from .execution import (
+    ExecutionFailure,
+    Identity,
+    archive_output,
+    output_lock,
+    read_json,
+    records_path,
+    report_progress,
+    write_json,
+)
 
 
 @dataclass
@@ -90,12 +102,59 @@ def simulate(
     *,
     tmp: str | Path | None = None,
     dry_run: bool = False,
+    resume: bool = False,
+    retry_failed: bool = False,
+    _identity: Identity | None = None,
 ) -> xr.Dataset | None:
     """Translate one case and execute through the existing Program mechanics.
 
     ``outputs`` and ``tmp`` are invocation paths relative to cwd. A dry run writes
     the same native input records beside ``outputs`` and returns None.
     """
+    outputs = Path(outputs).expanduser().resolve()
+    try:
+        program, inputs, request, finalize = _prepare_simulation(case, dry_run)
+    except (ValueError, NotImplementedError, OSError) as error:
+        if not dry_run:
+            with output_lock(records_path(outputs)):
+                archive_output(outputs)
+                report = dict(
+                    records=[
+                        dict(
+                            name="case",
+                            status=(
+                                "blocked"
+                                if isinstance(error, OSError)
+                                else "scientifically_failed"
+                            ),
+                            reason=f"{type(error).__name__}: {error}",
+                        )
+                    ]
+                )
+                write_json(
+                    records_path(outputs) / f"preparation-{time_ns()}.json", report
+                )
+                report_progress(records_path(outputs) / "status.json", report)
+        raise
+    report = program.run(
+        inputs,
+        outputs,
+        Path(tmp or gettempdir()).expanduser().resolve(),
+        dry_run,
+        resume=resume,
+        retry_failed=retry_failed,
+        identity=_identity,
+        request=request,
+        finalize=finalize,
+    )
+    if dry_run:
+        return None
+    if not report["complete"]:
+        raise ExecutionFailure(report)
+    return xr.load_dataset(outputs)
+
+
+def _prepare_simulation(case, dry_run):
     from .PACE_Simulator_DoubleK import case_inputs, init, solar_source
 
     if not isinstance(case, Case):
@@ -120,12 +179,6 @@ def simulate(
     illumination = None if dry_run else solar_source(case)
     if method in ("monochromatic", "response_integration") and not dry_run:
         check_data(case, inputs, illumination)
-    outputs = Path(outputs).expanduser().resolve()
-    program.run(
-        inputs, outputs, Path(tmp or gettempdir()).expanduser().resolve(), dry_run
-    )
-    if dry_run:
-        return None
     attributes = dict(
         spectral_method=method,
         illumination_policy=case.illumination["source"],
@@ -134,13 +187,179 @@ def simulate(
     )
     if method == "pace_native":
         attributes["channel_selection"] = case.sensor["channels"]
-    with Dataset(outputs, "a") as result:
-        result.setncatts(attributes)
-        if method in ("monochromatic", "response_integration"):
-            _monochromatic_metadata(result)
-        if responses is not None:
-            bands.write_calibrations(result, responses)
-    return xr.load_dataset(outputs)
+
+    def finalize(path):
+        with Dataset(path, "a") as result:
+            result.setncatts(attributes)
+            if method in ("monochromatic", "response_integration"):
+                _monochromatic_metadata(result)
+            if responses is not None:
+                bands.write_calibrations(result, responses)
+
+    return program, inputs, asdict(case), finalize
+
+
+def simulate_cases(
+    cases: str | Path,
+    outputs: str | Path,
+    *,
+    resume: bool = False,
+    retry_failed=(),
+    tmp: str | Path | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """Run an ordered TOML list of named existing case files, independently.
+
+    ``[[cases]]`` entries contain only ``name`` and ``file``. File paths resolve
+    relative to the list; each case retains its own path/physics conventions.
+    Products are ``outputs/name.nc``. Return accounting for the full population.
+    On resume, scientific failures require an explicit name in ``retry_failed``;
+    operational blocks, interruptions and incomplete products are reconsidered.
+    """
+    from dask.tokenize import tokenize
+    from .core import expect_exe
+
+    source = Path(cases).expanduser().resolve()
+    with source.open("rb") as stream:
+        tables = tomllib.load(stream)
+    entries = tables.get("cases", [])
+    if set(tables) != {"cases"} or not isinstance(entries, list) or not entries:
+        raise ValueError("A case list needs a nonempty [[cases]] array")
+    names = []
+    for entry in entries:
+        if set(entry) != {"name", "file"}:
+            raise ValueError("Each case-list entry needs only name and file")
+        name = entry["name"]
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in (".", "..")
+            or any(c in name for c in "/\\")
+        ):
+            raise ValueError("Case names must be nonempty filename components")
+        if name in names:
+            raise ValueError(f"Duplicate case name {name!r}")
+        names.append(name)
+        if not isinstance(entry["file"], str):
+            raise ValueError("Case file must be a path")
+    unknown = set(retry_failed) - set(names)
+    if unknown:
+        raise ValueError(f"Unknown retry case names: {sorted(unknown)}")
+    output_dir = Path(outputs).expanduser().resolve()
+    records_dir = output_dir / "case-runs"
+    identity = Identity(ignored=(records_dir,))
+    identity.add_output(output_dir / "cases.json")
+    for name in names:
+        identity.add_output(output_dir / f"{name}.nc")
+    with output_lock(records_dir):
+        histories = sorted(records_dir.glob("*.json"))
+        previous = read_json(histories[-1], {}) if resume and histories else {}
+        previous = {r["name"]: r for r in previous.get("records", [])}
+        report = dict(
+            source=str(source),
+            records=[
+                dict(
+                    name=e["name"],
+                    file=str((source.parent / e["file"]).resolve()),
+                    output=str(output_dir / f"{e['name']}.nc"),
+                    status="unattempted",
+                )
+                for e in entries
+            ],
+        )
+        run_file = records_dir / f"{time_ns()}.json"
+        write_json(run_file, report)
+        for record in report["records"]:
+            output = Path(record["output"])
+            try:
+                case = load_case(record["file"])
+                program = (
+                    "rtsos_PACE_Simulator_DoubleK"
+                    if case.spectral.get("method") == "pace_native"
+                    else "rtsos_Monochromatic"
+                )
+                program += ".exe" if expect_exe else ""
+                dependencies = dict(case.data)
+                dependencies.update(
+                    {k: v for k, v in case.sensor.items() if k == "response_file"}
+                )
+                for section in case.scene.values():
+                    dependencies.update(
+                        {
+                            k: v
+                            for k, v in section.items()
+                            if k in ("spectrum", "phase_matrix_hi", "phase_matrix_low")
+                        }
+                    )
+                binding = tokenize(
+                    asdict(case),
+                    identity.runtime(program),
+                    {str(p): identity.path(p) for p in dependencies.values()},
+                )
+                record["request_id"] = binding
+                old = previous.get(record["name"], {})
+                if (
+                    resume
+                    and old.get("request_id") == binding
+                    and old.get("status") == "scientifically_failed"
+                    and "execution" not in old
+                    and record["name"] not in retry_failed
+                ):
+                    record.update(status=old["status"], reason=old["reason"])
+                else:
+                    simulate(
+                        case,
+                        output,
+                        tmp=tmp,
+                        dry_run=dry_run,
+                        resume=resume,
+                        retry_failed=record["name"] in retry_failed,
+                        _identity=identity,
+                    )
+                    record.update(
+                        status="unattempted" if dry_run else "successful", reason=""
+                    )
+            except KeyboardInterrupt:
+                record.update(status="cancelled", reason="User cancellation")
+                write_json(run_file, report)
+                report_progress(output_dir / "cases.json", report)
+                raise
+            except ExecutionFailure as error:
+                states = {r["status"] for r in error.report["records"]}
+                status = (
+                    "blocked"
+                    if "blocked" in states
+                    else (
+                        "scientifically_failed"
+                        if "scientifically_failed" in states
+                        else "retryable"
+                    )
+                )
+                record.update(status=status, reason=str(error), execution=error.report)
+            except OSError as error:
+                record.update(
+                    status="blocked", reason=f"{type(error).__name__}: {error}"
+                )
+            except (ValueError, NotImplementedError, KeyError) as error:
+                record.update(
+                    status="scientifically_failed",
+                    reason=f"{type(error).__name__}: {error}",
+                )
+            if record["status"] in ("blocked", "scientifically_failed", "retryable"):
+                try:
+                    with output_lock(records_path(output)):
+                        archive_output(output)
+                except OSError as error:
+                    record.update(
+                        status="blocked",
+                        reason=f"{record['reason']}; cannot retire public output: {error}",
+                    )
+                write_json(run_file, report)
+            else:
+                # A missing success summary is repaired from each atomic case product.
+                report_progress(run_file, report)
+            report_progress(output_dir / "cases.json", report)
+        return report
 
 
 def _monochromatic_metadata(result):
