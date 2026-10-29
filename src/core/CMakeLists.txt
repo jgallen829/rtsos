@@ -22,5 +22,7 @@ add_library(core
 )
 target_link_libraries(core
     HDF5::HDF5
+    # hdf5_utils uses dimension scales from the high-level Fortran library.
+    hdf5::hdf5_hl_fortran
     LAPACK::LAPACK
 )
